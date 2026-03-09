@@ -106,7 +106,7 @@ tasks.withType<Test> {
 }
 
 ktlint {
-    version.set("1.3.1")
+    version.set("1.5.0")
     filter {
         // Do not lint generated sources
         exclude { it.file.path.contains(layout.buildDirectory.get().asFile.absolutePath) }
