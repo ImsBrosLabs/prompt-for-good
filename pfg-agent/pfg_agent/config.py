@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = Field(..., description="Anthropic API key")
-    llm_model: str = Field("claude-3-5-sonnet-20241022", description="Claude model to use")
+    llm_model: str = Field("claude-sonnet-4-6", description="Claude model to use")
     max_tokens_per_day: int = Field(100_000, description="Daily token budget")
 
     # GitHub

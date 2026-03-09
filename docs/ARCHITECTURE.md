@@ -80,7 +80,7 @@ The autonomous AI worker. Runs inside each pfg-runner container.
              → payload: pr_url, status (success|failed), tokens_used
 ```
 
-**Default LLM:** `claude-3-5-sonnet` (Anthropic)
+**Default LLM:** `claude-sonnet-4-6` (Anthropic)
 
 **Context strategy (anti-waste):**
 - Issues pre-scored by pfg-hub → agent never analyzes un-solvable issues
@@ -101,7 +101,7 @@ The Docker container that contributors deploy.
 llm:
   provider: claude          # claude | openai | gemini (future)
   api_key: ${ANTHROPIC_API_KEY}
-  model: claude-3-5-sonnet-20241022
+  model: claude-sonnet-4-6
   max_tokens_per_day: 100000
 
 schedule:

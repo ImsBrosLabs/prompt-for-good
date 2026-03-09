@@ -95,7 +95,7 @@ docker run -v $(pwd)/pfg.yaml:/app/pfg.yaml \
 | pfg-hub | Kotlin, Spring Boot, PostgreSQL |
 | pfg-agent | Python, LangChain, GitPython |
 | pfg-runner | Docker |
-| Default LLM | Claude (claude-3-5-sonnet), extensible to OpenAI/Gemini |
+| Default LLM | Claude (claude-sonnet-4-6), extensible to OpenAI/Gemini |
 
 ---
 

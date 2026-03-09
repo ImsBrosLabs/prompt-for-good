@@ -5,7 +5,7 @@
 llm:
   provider: claude                          # claude | openai | gemini (future)
   api_key: ${ANTHROPIC_API_KEY}
-  model: claude-3-5-sonnet-20241022
+  model: claude-sonnet-4-6
   max_tokens_per_day: 100000               # your daily token budget
 
 schedule:
