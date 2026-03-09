@@ -39,6 +39,15 @@ pfg:
     issue-max-retries: 3           # abandon issue after 3 failed attempts
     issue-min-score: 60            # minimum score to enter the queue
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: alpha
+    tagsSorter: alpha
+    tryItOutEnabled: true
+
 logging:
   level:
     dev.promptforgood: INFO

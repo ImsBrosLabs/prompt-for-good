@@ -34,6 +34,9 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
+    // OpenAPI / Swagger UI
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
+
     // HTTP Client (for GitHub API)
     implementation("org.springframework.boot:spring-boot-starter-webflux")
 
