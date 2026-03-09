@@ -79,7 +79,9 @@ Please fix the issue taking this error into account.
     diff = _extract_diff(raw)
     tokens_used = response.usage.input_tokens + response.usage.output_tokens
 
-    log.info("patch generated", issue_id=issue.id, tokens=tokens_used, diff_lines=len(diff.splitlines()))
+    log.info(
+        "patch generated", issue_id=issue.id, tokens=tokens_used, diff_lines=len(diff.splitlines())
+    )
     return Patch(diff=diff, tokens_used=tokens_used)
 
 

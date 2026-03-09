@@ -50,10 +50,19 @@ def open_pull_request(issue: Issue, patch: Patch) -> str:
     subprocess.run(["git", "checkout", "-b", branch_name], cwd=work_path, check=True)
     subprocess.run(["git", "add", "-A"], cwd=work_path, check=True)
     subprocess.run(
-        ["git", "commit", "-m", f"fix: resolve issue #{issue_number}\n\nAutomated fix by pfg-agent"],
+        [
+            "git",
+            "commit",
+            "-m",
+            f"fix: resolve issue #{issue_number}\n\nAutomated fix by pfg-agent",
+        ],
         cwd=work_path,
         check=True,
-        env={**__import__("os").environ, "GIT_AUTHOR_NAME": "pfg-agent", "GIT_AUTHOR_EMAIL": "agent@promptforgood.dev"},
+        env={
+            **__import__("os").environ,
+            "GIT_AUTHOR_NAME": "pfg-agent",
+            "GIT_AUTHOR_EMAIL": "agent@promptforgood.dev",
+        },
     )
 
     subprocess.run(
