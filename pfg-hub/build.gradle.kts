@@ -1,18 +1,17 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    id("org.springframework.boot") version "3.3.0"
-    id("io.spring.dependency-management") version "1.1.5"
-    kotlin("jvm") version "2.0.0"
-    kotlin("plugin.spring") version "2.0.0"
-    kotlin("plugin.jpa") version "2.0.0"
+    id("org.springframework.boot") version "4.0.3"
+    id("io.spring.dependency-management") version "1.1.7"
+    kotlin("jvm") version "2.2.0"
+    kotlin("plugin.spring") version "2.2.0"
+    kotlin("plugin.jpa") version "2.2.0"
     id("org.jlleitschuh.gradle.ktlint") version "12.1.1"
     id("org.openapi.generator") version "7.6.0"
 }
 
 group = "dev.promptforgood"
 version = "0.1.0-SNAPSHOT"
-java.sourceCompatibility = JavaVersion.VERSION_21
 
 repositories {
     mavenCentral()
@@ -73,7 +72,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
     // Kotlin
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+    implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
 
     // Database
@@ -91,14 +90,14 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation("io.mockk:mockk:1.13.11")
-    testImplementation("com.ninja-squad:springmockk:4.0.2")
+    testImplementation("com.ninja-squad:springmockk:5.0.0")
     testRuntimeOnly("com.h2database:h2")
 }
 
-tasks.withType<KotlinCompile> {
+kotlin {
     compilerOptions {
-        freeCompilerArgs.add("-Xjsr305=strict")
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+        freeCompilerArgs.addAll("-Xjsr305=strict")
+        jvmTarget.set(JvmTarget.JVM_21)
     }
 }
 
@@ -107,7 +106,7 @@ tasks.withType<Test> {
 }
 
 ktlint {
-    version.set("1.3.1")
+    version.set("1.5.0")
     filter {
         // Do not lint generated sources
         exclude { it.file.path.contains(layout.buildDirectory.get().asFile.absolutePath) }
