@@ -21,7 +21,7 @@ class RunnerController(
         id: String,
         xRunnerToken: String,
         heartbeatRequest: HeartbeatRequest,
-    ): ResponseEntity<Void> {
+    ): ResponseEntity<Unit> {
         runnerService.heartbeat(id, xRunnerToken, heartbeatRequest.quotaRemainingToday)
         return ResponseEntity.noContent().build()
     }

@@ -31,7 +31,7 @@ class IssueController(
         id: String,
         xRunnerToken: String,
         doneRequest: DoneRequest,
-    ): ResponseEntity<Void> {
+    ): ResponseEntity<Unit> {
         issueService.reportDone(id, xRunnerToken, doneRequest)
         return ResponseEntity.noContent().build()
     }
