@@ -1,6 +1,10 @@
-# Prompt for Good 🤖
+<div align="center">
+  <img src="docs/logo.svg" width="160" alt="Prompt for Good logo"/>
 
-> *Your unused AI quota, working for open source.*
+  # Prompt for Good
+
+  > *Your unused AI quota, working for open source.*
+</div>
 
 **Prompt for Good** (`pfg`) turns idle LLM API credits into real open-source contributions. Contributors run a lightweight Docker container with their own API key — the container claims pre-qualified GitHub issues, generates fixes autonomously, validates them (build + tests), and opens Pull Requests. No human in the loop.
 

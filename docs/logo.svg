@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f0f1a"/>
+      <stop offset="100%" style="stop-color:#1a1a2e"/>
+    </linearGradient>
+    <!-- Accent gradient for the prompt symbol -->
+    <linearGradient id="promptGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+    <!-- Heart gradient -->
+    <linearGradient id="heartGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ec4899"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+    <!-- Glow filter -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Subtle glow for heart -->
+    <filter id="heartGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="240" cy="240" r="230" fill="url(#bg)"/>
+
+  <!-- Outer ring -->
+  <circle cx="240" cy="240" r="225" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-opacity="0.3"/>
+
+  <!-- Grid dots (subtle background texture) -->
+  <g opacity="0.08" fill="#06b6d4">
+    <circle cx="100" cy="100" r="2"/><circle cx="140" cy="100" r="2"/><circle cx="180" cy="100" r="2"/>
+    <circle cx="300" cy="100" r="2"/><circle cx="340" cy="100" r="2"/><circle cx="380" cy="100" r="2"/>
+    <circle cx="100" cy="140" r="2"/><circle cx="380" cy="140" r="2"/>
+    <circle cx="100" cy="380" r="2"/><circle cx="140" cy="380" r="2"/>
+    <circle cx="300" cy="380" r="2"/><circle cx="340" cy="380" r="2"/><circle cx="380" cy="380" r="2"/>
+  </g>
+
+  <!-- Terminal prompt chevron ">" -->
+  <g filter="url(#glow)">
+    <polyline
+      points="148,178 208,240 148,302"
+      fill="none"
+      stroke="url(#promptGrad)"
+      stroke-width="22"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- Underscore cursor -->
+  <rect x="220" y="274" width="52" height="14" rx="7" fill="url(#promptGrad)" opacity="0.9" filter="url(#glow)"/>
+
+  <!-- Heart (top-right, overlapping the prompt) -->
+  <g transform="translate(296, 148)" filter="url(#heartGlow)">
+    <path d="M36,14 C36,6.3 29.7,0 22,0 C18.1,0 14.6,1.6 12,4.3 C9.4,1.6 5.9,0 2,0 C-5.7,0 -12,6.3 -12,14 C-12,22 -5,29 12,38 C29,29 36,22 36,14 Z"
+      fill="url(#heartGrad)"
+      transform="scale(1.05)"
+    />
+  </g>
+
+  <!-- "pfg" wordmark -->
+  <text
+    x="240"
+    y="378"
+    text-anchor="middle"
+    font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', monospace"
+    font-size="28"
+    font-weight="600"
+    letter-spacing="10"
+    fill="#e2e8f0"
+    opacity="0.85"
+  >pfg</text>
+
+  <!-- Tagline -->
+  <text
+    x="240"
+    y="410"
+    text-anchor="middle"
+    font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+    font-size="13"
+    font-weight="400"
+    letter-spacing="2.5"
+    fill="#94a3b8"
+    opacity="0.7"
+  >PROMPT FOR GOOD</text>
+</svg>
