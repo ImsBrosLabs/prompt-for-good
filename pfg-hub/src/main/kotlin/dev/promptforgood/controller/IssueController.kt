@@ -7,8 +7,9 @@ import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/issues")
-class IssueController(private val issueService: IssueService) {
-
+class IssueController(
+    private val issueService: IssueService,
+) {
     /** Returns the next pending issue from the FIFO queue. */
     @GetMapping("/next")
     fun getNextIssue(

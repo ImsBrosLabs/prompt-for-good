@@ -1,6 +1,5 @@
 """Phase 3: Clone the repository and extract a focused code context window."""
 
-import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path

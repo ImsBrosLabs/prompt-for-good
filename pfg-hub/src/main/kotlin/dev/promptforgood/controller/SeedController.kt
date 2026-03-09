@@ -8,12 +8,13 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/seed")
-class SeedController(private val githubService: GitHubService) {
-
+class SeedController(
+    private val githubService: GitHubService,
+) {
     @PostMapping("/repo")
     fun seedRepo(
         @RequestParam owner: String,
-        @RequestParam name: String
+        @RequestParam name: String,
     ) {
         githubService.seedRepo(owner, name)
     }

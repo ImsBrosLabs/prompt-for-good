@@ -36,8 +36,6 @@ def open_pull_request(issue: Issue, patch: Patch) -> str:
 
     Returns the PR URL.
     """
-    from pfg_agent.phases.context import CodeContext  # avoid circular import
-
     branch_name = f"pfg/{issue.id}"
 
     # Extract owner/repo from GitHub URL

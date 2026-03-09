@@ -16,24 +16,27 @@ class GitHubService(
     private val repoRepository: RepoRepository,
     private val issueRepository: IssueRepository,
     private val scoringService: ScoringService,
-    @Value("\${pfg.github.token}") private val githubToken: String
+    @Value("\${pfg.github.token}") private val githubToken: String,
 ) {
-
-    private val webClient = WebClient.builder()
-        .baseUrl("https://api.github.com")
-        .defaultHeader("Authorization", "Bearer $githubToken")
-        .defaultHeader("Accept", "application/vnd.github.v3+json")
-        .build()
+    private val webClient =
+        WebClient
+            .builder()
+            .baseUrl("https://api.github.com")
+            .defaultHeader("Authorization", "Bearer $githubToken")
+            .defaultHeader("Accept", "application/vnd.github.v3+json")
+            .build()
 
     @Transactional
     fun crawlRepo(repoId: String) {
         val repo = repoRepository.findById(repoId).orElseThrow { RuntimeException("Repo not found") }
-        val response = webClient.get()
-            .uri("/repos/${repo.owner}/${repo.name}/issues?state=open&labels=bug,good%20first%20issue,help%20wanted")
-            .retrieve()
-            .bodyToFlux(Map::class.java)
-            .collectList()
-            .block() ?: emptyList()
+        val response =
+            webClient
+                .get()
+                .uri("/repos/${repo.owner}/${repo.name}/issues?state=open&labels=bug,good%20first%20issue,help%20wanted")
+                .retrieve()
+                .bodyToFlux(Map::class.java)
+                .collectList()
+                .block() ?: emptyList()
 
         response.forEach { issueData ->
             val githubId = (issueData["id"] as Number).toLong()
@@ -46,17 +49,18 @@ class GitHubService(
                 val labelsList = (issueData["labels"] as? List<Map<String, String>>) ?: emptyList()
                 val labelsStr = labelsList.map { it["name"] }.joinToString(",")
 
-                val newIssue = Issue(
-                    repo = repo,
-                    githubId = githubId,
-                    title = title,
-                    body = body,
-                    githubUrl = githubUrl,
-                    labels = labelsStr,
-                    status = IssueStatus.PENDING,
-                    createdAt = Instant.now(),
-                    updatedAt = Instant.now()
-                )
+                val newIssue =
+                    Issue(
+                        repo = repo,
+                        githubId = githubId,
+                        title = title,
+                        body = body,
+                        githubUrl = githubUrl,
+                        labels = labelsStr,
+                        status = IssueStatus.PENDING,
+                        createdAt = Instant.now(),
+                        updatedAt = Instant.now(),
+                    )
 
                 val score = scoringService.scoreIssue(newIssue)
                 if (score >= 60) {
@@ -69,27 +73,33 @@ class GitHubService(
     }
 
     @Transactional
-    fun seedRepo(owner: String, name: String) {
+    fun seedRepo(
+        owner: String,
+        name: String,
+    ) {
         val githubUrl = "https://github.com/$owner/$name"
         if (repoRepository.findByGithubUrl(githubUrl) != null) return
 
-        val repoData = webClient.get()
-            .uri("/repos/$owner/$name")
-            .retrieve()
-            .bodyToMono(Map::class.java)
-            .block() ?: throw RuntimeException("Repo not found on GitHub")
+        val repoData =
+            webClient
+                .get()
+                .uri("/repos/$owner/$name")
+                .retrieve()
+                .bodyToMono(Map::class.java)
+                .block() ?: throw RuntimeException("Repo not found on GitHub")
 
         val stars = (repoData["stargazers_count"] as Number).toInt()
         val language = repoData["language"] as? String
 
-        val repo = Repo(
-            githubUrl = githubUrl,
-            owner = owner,
-            name = name,
-            language = language,
-            stars = stars,
-            eligible = stars >= 50
-        )
+        val repo =
+            Repo(
+                githubUrl = githubUrl,
+                owner = owner,
+                name = name,
+                language = language,
+                stars = stars,
+                eligible = stars >= 50,
+            )
         val savedRepo = repoRepository.save(repo)
         if (savedRepo.eligible) {
             crawlRepo(savedRepo.id)
