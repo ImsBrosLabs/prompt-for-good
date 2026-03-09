@@ -28,7 +28,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Lint with ruff
         run: uv run ruff check .
@@ -40,5 +40,6 @@ jobs:
         run: uv run pytest
         env:
           PFG_HUB_URL: http://localhost:8080
+          PFG_TOKEN: test-token
           ANTHROPIC_API_KEY: sk-ant-test-key
           GITHUB_TOKEN: ghp_test_token

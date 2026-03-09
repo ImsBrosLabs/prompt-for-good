@@ -7,5 +7,6 @@ import org.springframework.stereotype.Repository
 @Repository
 interface RunnerRepository : JpaRepository<Runner, String> {
     fun findByToken(token: String): Runner?
+
     fun countByActiveTrue(): Long
 }

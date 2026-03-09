@@ -14,12 +14,11 @@ class StatsService(
     private val repoRepository: RepoRepository,
     private val issueRepository: IssueRepository,
     private val runnerRepository: RunnerRepository,
-    private val contributionRepository: ContributionRepository
+    private val contributionRepository: ContributionRepository,
 ) {
-
     @Transactional(readOnly = true)
-    fun getStats(): StatsResponse {
-        return StatsResponse(
+    fun getStats(): StatsResponse =
+        StatsResponse(
             totalRepos = repoRepository.count(),
             eligibleRepos = repoRepository.findAllByEligibleTrue().size.toLong(),
             totalIssues = issueRepository.count(),
@@ -28,7 +27,6 @@ class StatsService(
             doneIssues = issueRepository.countByStatus(IssueStatus.DONE),
             failedIssues = issueRepository.countByStatus(IssueStatus.FAILED),
             totalPrsOpened = contributionRepository.count(),
-            activeRunners = runnerRepository.countByActiveTrue()
+            activeRunners = runnerRepository.countByActiveTrue(),
         )
-    }
 }

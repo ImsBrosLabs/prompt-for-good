@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service
 
 @Service
 class ScoringService {
-
     /**
      * Scores an issue based on ADR-002 criteria.
      * Scale: 0-100.

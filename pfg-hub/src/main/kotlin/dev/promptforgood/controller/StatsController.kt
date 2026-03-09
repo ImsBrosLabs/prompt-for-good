@@ -7,8 +7,9 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/stats")
-class StatsController(private val statsService: StatsService) {
-
+class StatsController(
+    private val statsService: StatsService,
+) {
     @GetMapping
     fun getStats(): StatsResponse = statsService.getStats()
 }

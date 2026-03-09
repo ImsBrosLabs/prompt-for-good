@@ -7,5 +7,6 @@ import org.springframework.stereotype.Repository
 @Repository
 interface RepoRepository : JpaRepository<Repo, String> {
     fun findByGithubUrl(githubUrl: String): Repo?
+
     fun findAllByEligibleTrue(): List<Repo>
 }
