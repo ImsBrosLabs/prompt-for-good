@@ -1,7 +1,5 @@
 """Tests for hub_client parsing logic."""
 
-import pytest
-
 from pfg_agent.hub_client import Issue, _parse_issue
 
 

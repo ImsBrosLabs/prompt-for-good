@@ -3,9 +3,7 @@
 import subprocess
 from pathlib import Path
 
-import pytest
-
-from pfg_agent.phases.context import _extract_files, MAX_FILE_SIZE_BYTES
+from pfg_agent.phases.context import MAX_FILE_SIZE_BYTES, _extract_files
 
 
 def _init_git_repo(path: Path) -> None:
