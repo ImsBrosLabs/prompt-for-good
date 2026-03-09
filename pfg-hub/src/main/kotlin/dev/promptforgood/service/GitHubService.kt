@@ -46,6 +46,7 @@ class GitHubService(
                 val title = issueData["title"] as String
                 val body = issueData["body"] as? String
                 val githubUrl = issueData["html_url"] as String
+
                 @Suppress("UNCHECKED_CAST")
                 val labelsList = (issueData["labels"] as? List<Map<String, String>>) ?: emptyList()
                 val labelsStr = labelsList.map { it["name"] }.joinToString(",")
