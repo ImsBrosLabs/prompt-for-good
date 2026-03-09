@@ -1,0 +1,44 @@
+name: pfg-agent CI
+
+on:
+  push:
+    paths:
+      - 'pfg-agent/**'
+    branches: [ main, develop ]
+  pull_request:
+    paths:
+      - 'pfg-agent/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pfg-agent
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      - name: Format check with ruff
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest
+        env:
+          PFG_HUB_URL: http://localhost:8080
+          ANTHROPIC_API_KEY: sk-ant-test-key
+          GITHUB_TOKEN: ghp_test_token

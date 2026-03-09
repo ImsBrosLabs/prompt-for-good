@@ -1,0 +1,21 @@
+# pfg-runner configuration
+# Copy this to pfg.yaml and fill in your values.
+# pfg.yaml is gitignored — never commit it.
+
+llm:
+  provider: claude                          # claude | openai | gemini (future)
+  api_key: ${ANTHROPIC_API_KEY}
+  model: claude-3-5-sonnet-20241022
+  max_tokens_per_day: 100000               # your daily token budget
+
+schedule:
+  active_hours: "20:00-23:00"             # only process issues during these hours
+  timezone: "Europe/Paris"                # your local timezone
+
+hub:
+  url: https://hub.promptforgood.dev
+  token: ${PFG_TOKEN}                     # token received after runner registration
+
+contributor:
+  name: "YourName"                        # your name or GitHub handle
+  github_token: ${GITHUB_TOKEN}           # GitHub PAT with repo scope

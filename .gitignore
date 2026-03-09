@@ -1,0 +1,43 @@
+# Environment
+.env
+.env.local
+*.env
+
+# pfg config (contains secrets)
+pfg.yaml
+!pfg.example.yaml
+
+# JVM / Kotlin / Gradle
+.gradle/
+build/
+*.class
+*.jar
+*.war
+*.ear
+out/
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.venv/
+venv/
+.uv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

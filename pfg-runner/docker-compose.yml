@@ -1,0 +1,18 @@
+services:
+  pfg-runner:
+    build:
+      context: ..
+      dockerfile: pfg-runner/Dockerfile
+    restart: unless-stopped
+    volumes:
+      - pfg-work:/tmp/pfg-work
+    environment:
+      - PFG_HUB_URL=${PFG_HUB_URL:-https://hub.promptforgood.dev}
+      - PFG_TOKEN=${PFG_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - CONTRIBUTOR_NAME=${CONTRIBUTOR_NAME:-anonymous}
+      - MAX_TOKENS_PER_DAY=${MAX_TOKENS_PER_DAY:-100000}
+
+volumes:
+  pfg-work:
