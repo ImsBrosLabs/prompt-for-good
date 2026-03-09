@@ -1,0 +1,450 @@
+openapi: "3.0.3"
+
+info:
+  title: PFG Hub API
+  description: >
+    REST API for the Prompt-for-Good hub.
+    Manages runners, issues and repository seeding for the autonomous contributor platform.
+  version: "0.1.0"
+  contact:
+    name: Prompt for Good
+    url: https://github.com/ImsBrosLabs/prompt-for-good
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Runners
+    description: Runner lifecycle — registration and heartbeat
+  - name: Issues
+    description: Issue queue management — claim and report on GitHub issues
+  - name: Stats
+    description: Platform-level statistics
+  - name: Seed
+    description: Repository seeding — add GitHub repos to the tracking queue
+
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
+security: []
+
+components:
+  securitySchemes:
+    RunnerToken:
+      type: apiKey
+      in: header
+      name: X-Runner-Token
+      description: Token obtained after runner registration via POST /runners/register
+
+  # -------------------------------------------------------------------------
+  # Schemas
+  # -------------------------------------------------------------------------
+  schemas:
+
+    # --- Runners ---
+
+    RegisterRequest:
+      type: object
+      required:
+        - contributorName
+      properties:
+        contributorName:
+          type: string
+          description: GitHub username or display name of the contributor
+          example: octocat
+
+    RegisterResponse:
+      type: object
+      properties:
+        runnerId:
+          type: string
+          description: Generated UUID identifying this runner
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        token:
+          type: string
+          description: Permanent bearer token to pass as X-Runner-Token on every subsequent request
+          example: "f1e2d3c4-b5a6-9870-fedc-ba9876543210"
+
+    HeartbeatRequest:
+      type: object
+      required:
+        - quotaRemainingToday
+      properties:
+        quotaRemainingToday:
+          type: integer
+          format: int64
+          description: Claude API tokens remaining in the runner's daily quota
+          example: 50000
+
+    # --- Issues ---
+
+    DoneRequest:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether the runner succeeded in opening a pull request
+        prUrl:
+          type: string
+          nullable: true
+          description: URL of the opened pull request
+          example: "https://github.com/owner/repo/pull/42"
+        tokensUsed:
+          type: integer
+          format: int64
+          nullable: true
+          description: Total Claude tokens consumed during the work session
+          example: 12500
+        errorMessage:
+          type: string
+          nullable: true
+          description: Human-readable error message when success is false
+
+    IssueStatus:
+      type: string
+      enum:
+        - PENDING
+        - CLAIMED
+        - DONE
+        - FAILED
+      description: Lifecycle state of an issue in the queue
+
+    IssueDto:
+      type: object
+      description: A GitHub issue tracked by the hub
+      properties:
+        id:
+          type: string
+          description: Internal UUID of the issue
+        githubId:
+          type: integer
+          format: int64
+          description: GitHub issue number
+        title:
+          type: string
+          description: Issue title
+        body:
+          type: string
+          nullable: true
+          description: Issue description (Markdown)
+        githubUrl:
+          type: string
+          description: Direct URL to the GitHub issue
+          example: "https://github.com/owner/repo/issues/42"
+        labels:
+          type: string
+          description: Comma-separated list of GitHub labels
+          example: "bug,good first issue"
+        score:
+          type: integer
+          format: int32
+          description: Computed priority score (higher is better)
+          example: 85
+        status:
+          $ref: '#/components/schemas/IssueStatus'
+        claimedBy:
+          type: string
+          nullable: true
+          description: UUID of the runner that claimed this issue
+        claimedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the issue was claimed (ISO-8601)
+        retryCount:
+          type: integer
+          format: int32
+          description: Number of failed attempts so far
+          example: 0
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the issue was ingested (ISO-8601)
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the last status change (ISO-8601)
+
+    # --- Stats ---
+
+    StatsResponse:
+      type: object
+      description: Aggregated platform statistics
+      properties:
+        totalRepos:
+          type: integer
+          format: int64
+          example: 42
+        eligibleRepos:
+          type: integer
+          format: int64
+          example: 30
+        totalIssues:
+          type: integer
+          format: int64
+          example: 1500
+        pendingIssues:
+          type: integer
+          format: int64
+          example: 200
+        claimedIssues:
+          type: integer
+          format: int64
+          example: 10
+        doneIssues:
+          type: integer
+          format: int64
+          example: 800
+        failedIssues:
+          type: integer
+          format: int64
+          example: 50
+        totalPrsOpened:
+          type: integer
+          format: int64
+          example: 850
+        activeRunners:
+          type: integer
+          format: int64
+          example: 5
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # --- Runners ---
+
+  /runners/register:
+    post:
+      tags:
+        - Runners
+      operationId: registerRunner
+      summary: Register a new runner
+      description: Creates a runner entry and returns a permanent authentication token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        "200":
+          description: Runner registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        "400":
+          description: Missing or invalid contributor name
+
+  /runners/{id}/heartbeat:
+    post:
+      tags:
+        - Runners
+      operationId: heartbeat
+      summary: Send a heartbeat
+      description: >
+        Signals the runner is alive and updates its remaining daily token quota.
+        Must be called at least every 30 minutes to stay marked as active.
+      security:
+        - RunnerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Runner UUID
+        - name: X-Runner-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+      responses:
+        "204":
+          description: Heartbeat recorded
+        "401":
+          description: Invalid or missing runner token
+        "404":
+          description: Runner not found
+
+  # --- Issues ---
+
+  /issues/next:
+    get:
+      tags:
+        - Issues
+      operationId: getNextIssue
+      summary: Get the next pending issue
+      description: >
+        Returns the highest-scored pending issue from the queue.
+        Returns 204 when the queue is empty.
+      security:
+        - RunnerToken: []
+      parameters:
+        - name: X-Runner-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Next issue available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDto'
+        "204":
+          description: No pending issue in the queue
+        "401":
+          description: Invalid or missing runner token
+
+  /issues/{id}/claim:
+    post:
+      tags:
+        - Issues
+      operationId: claimIssue
+      summary: Claim an issue
+      description: Marks the issue as CLAIMED by the calling runner and starts the work timer.
+      security:
+        - RunnerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Issue UUID
+        - name: X-Runner-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Issue successfully claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssueDto'
+        "401":
+          description: Invalid or missing runner token
+        "404":
+          description: Issue not found
+        "409":
+          description: Issue already claimed by another runner
+
+  /issues/{id}/done:
+    post:
+      tags:
+        - Issues
+      operationId: reportDone
+      summary: Report issue completion
+      description: >
+        Runner reports success or failure for a claimed issue.
+        Failed issues may be retried up to the configured maximum (default: 3).
+      security:
+        - RunnerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Issue UUID
+        - name: X-Runner-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoneRequest'
+      responses:
+        "204":
+          description: Report accepted
+        "400":
+          description: Invalid request body
+        "401":
+          description: Invalid or missing runner token
+        "404":
+          description: Issue not found
+
+  # --- Stats ---
+
+  /stats:
+    get:
+      tags:
+        - Stats
+      operationId: getStats
+      summary: Get platform statistics
+      description: Returns aggregated counts for repositories, issues and runners across the platform.
+      responses:
+        "200":
+          description: Current platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  # --- Seed ---
+
+  /seed/repo:
+    post:
+      tags:
+        - Seed
+      operationId: seedRepo
+      summary: Seed a single repository
+      description: >
+        Fetches open issues from the given GitHub repository
+        and adds qualifying ones to the scoring queue.
+      parameters:
+        - name: owner
+          in: query
+          required: true
+          schema:
+            type: string
+          example: spring-projects
+          description: GitHub organisation or user login
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+          example: spring-boot
+          description: Repository name
+      responses:
+        "200":
+          description: Repository seeded successfully
+        "400":
+          description: Missing owner or name parameter
+        "502":
+          description: GitHub API unreachable or rate-limited
+
+  /seed/default:
+    post:
+      tags:
+        - Seed
+      operationId: seedDefault
+      summary: Seed default repositories
+      description: >
+        Seeds a curated list of well-known repositories
+        (spring-boot, requests, scikit-learn) — useful for initial setup.
+      responses:
+        "200":
+          description: Default repositories seeded successfully

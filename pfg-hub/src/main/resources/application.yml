@@ -40,10 +40,13 @@ pfg:
     issue-min-score: 60            # minimum score to enter the queue
 
 springdoc:
+  # Contract-first: serve the hand-written spec, disable annotation scanning
   api-docs:
-    path: /v3/api-docs
+    enabled: false
   swagger-ui:
     path: /swagger-ui.html
+    # Point to the static openapi.yml served by Spring's resource handler
+    url: /openapi.yml
     operationsSorter: alpha
     tagsSorter: alpha
     tryItOutEnabled: true

@@ -1,6 +1,6 @@
 package dev.promptforgood.service
 
-import dev.promptforgood.controller.StatsResponse
+import dev.promptforgood.api.model.StatsResponse
 import dev.promptforgood.model.IssueStatus
 import dev.promptforgood.repository.ContributionRepository
 import dev.promptforgood.repository.IssueRepository
