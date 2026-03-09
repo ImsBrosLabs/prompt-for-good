@@ -40,5 +40,6 @@ jobs:
         run: uv run pytest
         env:
           PFG_HUB_URL: http://localhost:8080
+          PFG_TOKEN: test-token
           ANTHROPIC_API_KEY: sk-ant-test-key
           GITHUB_TOKEN: ghp_test_token
