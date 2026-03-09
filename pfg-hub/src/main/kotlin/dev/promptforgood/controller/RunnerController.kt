@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RestController
 class RunnerController(
     private val runnerService: RunnerService,
 ) : RunnersApi {
-
     override fun registerRunner(registerRequest: RegisterRequest): ResponseEntity<RegisterResponse> {
         val runner = runnerService.register(registerRequest.contributorName)
         return ResponseEntity.ok(RegisterResponse(runnerId = runner.id, token = runner.token))

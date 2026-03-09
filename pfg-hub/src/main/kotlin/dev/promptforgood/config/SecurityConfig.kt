@@ -10,7 +10,6 @@ import org.springframework.security.web.SecurityFilterChain
 @Configuration
 @EnableWebSecurity
 class SecurityConfig {
-
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http
@@ -28,9 +27,11 @@ class SecurityConfig {
                         "/webjars/**",
                     ).permitAll()
                     // Actuator health — public
-                    .requestMatchers("/actuator/health").permitAll()
+                    .requestMatchers("/actuator/health")
+                    .permitAll()
                     // Everything else requires a valid token (enforced at service level)
-                    .anyRequest().permitAll()
+                    .anyRequest()
+                    .permitAll()
             }
         return http.build()
     }

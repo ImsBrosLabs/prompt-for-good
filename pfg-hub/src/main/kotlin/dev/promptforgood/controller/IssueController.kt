@@ -14,7 +14,6 @@ import java.time.ZoneOffset
 class IssueController(
     private val issueService: IssueService,
 ) : IssuesApi {
-
     override fun getNextIssue(xRunnerToken: String): ResponseEntity<IssueDto> {
         val issue = issueService.getNextIssue(xRunnerToken)
         return if (issue != null) ResponseEntity.ok(issue.toDto()) else ResponseEntity.noContent().build()

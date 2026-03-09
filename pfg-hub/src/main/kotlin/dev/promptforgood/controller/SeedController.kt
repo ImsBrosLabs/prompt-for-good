@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RestController
 class SeedController(
     private val githubService: GitHubService,
 ) : SeedApi {
-
     override fun seedRepo(
         owner: String,
         name: String,

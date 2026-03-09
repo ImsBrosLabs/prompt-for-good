@@ -10,7 +10,5 @@ import org.springframework.web.bind.annotation.RestController
 class StatsController(
     private val statsService: StatsService,
 ) : StatsApi {
-
-    override fun getStats(): ResponseEntity<StatsResponse> =
-        ResponseEntity.ok(statsService.getStats())
+    override fun getStats(): ResponseEntity<StatsResponse> = ResponseEntity.ok(statsService.getStats())
 }
