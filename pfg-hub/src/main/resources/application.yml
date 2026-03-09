@@ -39,6 +39,18 @@ pfg:
     issue-max-retries: 3           # abandon issue after 3 failed attempts
     issue-min-score: 60            # minimum score to enter the queue
 
+springdoc:
+  # Contract-first: serve the hand-written spec, disable annotation scanning
+  api-docs:
+    enabled: false
+  swagger-ui:
+    path: /swagger-ui.html
+    # Point to the static openapi.yml served by Spring's resource handler
+    url: /openapi.yml
+    operationsSorter: alpha
+    tagsSorter: alpha
+    tryItOutEnabled: true
+
 logging:
   level:
     dev.promptforgood: INFO

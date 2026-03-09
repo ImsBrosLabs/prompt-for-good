@@ -1,55 +1,58 @@
 package dev.promptforgood.controller
 
+import dev.promptforgood.api.IssuesApi
+import dev.promptforgood.api.model.DoneRequest
+import dev.promptforgood.api.model.IssueDto
+import dev.promptforgood.api.model.IssueStatus
 import dev.promptforgood.model.Issue
 import dev.promptforgood.service.IssueService
 import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestHeader
-import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.time.ZoneOffset
 
 @RestController
-@RequestMapping("/issues")
 class IssueController(
     private val issueService: IssueService,
-) {
-    /** Returns the next pending issue from the FIFO queue. */
-    @GetMapping("/next")
-    fun getNextIssue(
-        @RequestHeader("X-Runner-Token") runnerToken: String,
-    ): ResponseEntity<Issue> {
-        val issue = issueService.getNextIssue(runnerToken)
-        return if (issue != null) ResponseEntity.ok(issue) else ResponseEntity.noContent().build()
+) : IssuesApi {
+    override fun getNextIssue(xRunnerToken: String): ResponseEntity<IssueDto> {
+        val issue = issueService.getNextIssue(xRunnerToken)
+        return if (issue != null) ResponseEntity.ok(issue.toDto()) else ResponseEntity.noContent().build()
     }
 
-    /** Runner claims an issue and starts working on it. */
-    @PostMapping("/{id}/claim")
-    fun claimIssue(
-        @PathVariable id: String,
-        @RequestHeader("X-Runner-Token") runnerToken: String,
-    ): ResponseEntity<Issue> {
-        val issue = issueService.claimIssue(id, runnerToken)
-        return ResponseEntity.ok(issue)
+    override fun claimIssue(
+        id: String,
+        xRunnerToken: String,
+    ): ResponseEntity<IssueDto> {
+        val issue = issueService.claimIssue(id, xRunnerToken)
+        return ResponseEntity.ok(issue.toDto())
     }
 
-    /** Runner reports completion (success or failure). */
-    @PostMapping("/{id}/done")
-    fun reportDone(
-        @PathVariable id: String,
-        @RequestHeader("X-Runner-Token") runnerToken: String,
-        @RequestBody body: DoneRequest,
-    ): ResponseEntity<Void> {
-        issueService.reportDone(id, runnerToken, body)
+    override fun reportDone(
+        id: String,
+        xRunnerToken: String,
+        doneRequest: DoneRequest,
+    ): ResponseEntity<Unit> {
+        issueService.reportDone(id, xRunnerToken, doneRequest)
         return ResponseEntity.noContent().build()
     }
 }
 
-data class DoneRequest(
-    val success: Boolean,
-    val prUrl: String? = null,
-    val tokensUsed: Long? = null,
-    val errorMessage: String? = null,
-)
+// ---------------------------------------------------------------------------
+// Mapping helper — keeps JPA entity out of the API layer
+// ---------------------------------------------------------------------------
+private fun Issue.toDto() =
+    IssueDto(
+        id = id,
+        githubId = githubId,
+        title = title,
+        body = body,
+        githubUrl = githubUrl,
+        labels = labels,
+        score = score,
+        status = IssueStatus.valueOf(status.name),
+        claimedBy = claimedBy,
+        claimedAt = claimedAt?.atOffset(ZoneOffset.UTC),
+        retryCount = retryCount,
+        createdAt = createdAt.atOffset(ZoneOffset.UTC),
+        updatedAt = updatedAt.atOffset(ZoneOffset.UTC),
+    )
