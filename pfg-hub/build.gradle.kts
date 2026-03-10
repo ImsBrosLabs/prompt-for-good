@@ -79,6 +79,7 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
+    implementation("org.springframework.boot:spring-boot-flyway")
 
     // OpenAPI / Swagger UI — serves the static openapi.yml via Swagger UI
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
