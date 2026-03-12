@@ -38,6 +38,7 @@ pfg:
     runner-timeout-minutes: 30     # mark runner as offline after 30min without heartbeat
     issue-max-retries: 3           # abandon issue after 3 failed attempts
     issue-min-score: 60            # minimum score to enter the queue
+    admin-key: ${ADMIN_KEY:}       # required to call /seed/** endpoints; set via ADMIN_KEY env var
 
 springdoc:
   # Contract-first: serve the hand-written spec, disable annotation scanning
