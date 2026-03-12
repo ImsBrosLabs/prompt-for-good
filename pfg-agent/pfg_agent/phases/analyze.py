@@ -1,5 +1,6 @@
 """Phase 2: Analyze the issue with an LLM to understand the problem and identify impacted files."""
 
+import json
 from dataclasses import dataclass
 
 import structlog
@@ -56,8 +57,6 @@ def analyze_issue(issue: Issue) -> Analysis:
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
-
-    import json
 
     content = response.content[0].text
     data = json.loads(content)

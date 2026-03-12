@@ -9,7 +9,7 @@ def _issue_data(**kwargs):
         "title": "Fix the bug",
         "body": "Some description",
         "githubUrl": "https://github.com/org/repo/issues/1",
-        "repo": {"githubUrl": "https://github.com/org/repo"},
+        "repoUrl": "https://github.com/org/repo",
         "labels": "bug,good-first-issue",
     }
     base.update(kwargs)

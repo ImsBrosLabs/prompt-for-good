@@ -136,6 +136,10 @@ components:
           type: string
           description: Direct URL to the GitHub issue
           example: "https://github.com/owner/repo/issues/42"
+        repoUrl:
+          type: string
+          description: GitHub URL of the repository containing this issue
+          example: "https://github.com/owner/repo"
         labels:
           type: string
           description: Comma-separated list of GitHub labels
