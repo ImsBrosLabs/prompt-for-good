@@ -77,6 +77,6 @@ def _parse_issue(data: dict) -> Issue:
         title=data["title"],
         body=data.get("body"),
         github_url=data["githubUrl"],
-        repo_url=data["repo"]["githubUrl"],
+        repo_url=data["repoUrl"],
         labels=data.get("labels", "").split(",") if data.get("labels") else [],
     )

@@ -47,6 +47,7 @@ private fun Issue.toDto() =
         title = title,
         body = body,
         githubUrl = githubUrl,
+        repoUrl = repo.githubUrl,
         labels = labels,
         score = score,
         status = IssueStatus.valueOf(status.name),
