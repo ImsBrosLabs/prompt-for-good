@@ -6,7 +6,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.springframework.web.filter.OncePerRequestFilter
 
 /**
- * Protects all /seed/** endpoints by requiring a valid X-Admin-Token header.
+ * Protects all /seed prefixed endpoints by requiring a valid X-Admin-Token header.
  * The expected token is configured via the ADMIN_KEY environment variable
  * (pfg.hub.admin-key in application.yml).
  *
