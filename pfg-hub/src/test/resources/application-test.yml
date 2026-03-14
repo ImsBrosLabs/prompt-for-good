@@ -1,0 +1,8 @@
+pfg:
+  github:
+    token: dummy-token
+  hub:
+    admin-key: test-admin-key
+    runner-timeout-minutes: 30
+    issue-max-retries: 3
+    issue-min-score: 60
