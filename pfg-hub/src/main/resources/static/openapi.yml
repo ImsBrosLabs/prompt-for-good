@@ -38,6 +38,11 @@ components:
       in: header
       name: X-Runner-Token
       description: Token obtained after runner registration via POST /runners/register
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+      description: Static admin secret configured via the ADMIN_KEY environment variable on the hub. Required for all /seed/** endpoints.
 
   # -------------------------------------------------------------------------
   # Schemas
@@ -417,7 +422,16 @@ paths:
       description: >
         Fetches open issues from the given GitHub repository
         and adds qualifying ones to the scoring queue.
+        Requires a valid X-Admin-Token header — admin-only endpoint.
+      security:
+        - AdminToken: []
       parameters:
+        - name: X-Admin-Token
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Admin secret key (configured via ADMIN_KEY env var on the hub)
         - name: owner
           in: query
           required: true
@@ -437,6 +451,8 @@ paths:
           description: Repository seeded successfully
         "400":
           description: Missing owner or name parameter
+        "401":
+          description: Missing or invalid X-Admin-Token
         "502":
           description: GitHub API unreachable or rate-limited
 
@@ -449,6 +465,18 @@ paths:
       description: >
         Seeds a curated list of well-known repositories
         (spring-boot, requests, scikit-learn) — useful for initial setup.
+        Requires a valid X-Admin-Token header — admin-only endpoint.
+      security:
+        - AdminToken: []
+      parameters:
+        - name: X-Admin-Token
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Admin secret key (configured via ADMIN_KEY env var on the hub)
       responses:
         "200":
           description: Default repositories seeded successfully
+        "401":
+          description: Missing or invalid X-Admin-Token
