@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     github_token: str = Field(..., description="GitHub personal access token")
 
     # Runner identity
+    runner_id: str = Field(..., description="Runner UUID obtained after registration via POST /runners/register")
     contributor_name: str = Field("anonymous", description="Your name or handle")
 
     # Behaviour
