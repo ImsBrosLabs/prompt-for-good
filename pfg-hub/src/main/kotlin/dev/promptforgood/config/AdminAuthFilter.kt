@@ -10,15 +10,13 @@ import org.springframework.web.filter.OncePerRequestFilter
  * The expected token is configured via the ADMIN_KEY environment variable
  * (pfg.hub.admin-key in application.yml).
  *
- * If ADMIN_KEY is not set the endpoints are locked unconditionally — this
+ * If ADMIN_KEY is not set the endpoints are locked unconditionally - this
  * prevents accidental exposure in environments where the secret was forgotten.
  */
 class AdminAuthFilter(
     private val adminKey: String,
 ) : OncePerRequestFilter() {
-
-    override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        !request.requestURI.startsWith("/seed")
+    override fun shouldNotFilter(request: HttpServletRequest): Boolean = !request.requestURI.startsWith("/seed")
 
     override fun doFilterInternal(
         request: HttpServletRequest,

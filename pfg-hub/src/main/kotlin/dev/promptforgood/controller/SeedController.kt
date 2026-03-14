@@ -10,6 +10,7 @@ class SeedController(
     private val githubService: GitHubService,
 ) : SeedApi {
     override fun seedRepo(
+        xAdminToken: String,
         owner: String,
         name: String,
     ): ResponseEntity<Unit> {
@@ -17,7 +18,7 @@ class SeedController(
         return ResponseEntity.ok().build()
     }
 
-    override fun seedDefault(): ResponseEntity<Unit> {
+    override fun seedDefault(xAdminToken: String): ResponseEntity<Unit> {
         // Some good initial target repos for M1
         githubService.seedRepo("spring-projects", "spring-boot")
         githubService.seedRepo("psf", "requests")
