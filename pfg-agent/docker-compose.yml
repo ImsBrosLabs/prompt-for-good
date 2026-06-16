@@ -1,0 +1,23 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      PFG_HUB_URL: ${PFG_HUB_URL:-http://host.docker.internal:8080}
+      PFG_TOKEN: ${PFG_TOKEN:-test-token}
+      RUNNER_ID: ${RUNNER_ID:-00000000-0000-0000-0000-000000000000}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-key}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-ghp_test_token}
+      CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
+      MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
+    volumes:
+      - .:/workspace
+      - agent_venv:/workspace/.venv
+      - uv_cache:/uv-cache
+      - pfg_work:/tmp/pfg-work
+
+volumes:
+  agent_venv:
+  uv_cache:
+  pfg_work:
