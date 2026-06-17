@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-# Copy agent source
-COPY pfg-agent/pyproject.toml pfg-agent/uv.lock* ./
+# Copy agent metadata and dependency lockfile
+COPY pfg-agent/pyproject.toml pfg-agent/uv.lock* pfg-agent/README.md pfg-agent/LICENSE ./
 RUN uv sync --no-dev --no-install-project
 
 COPY pfg-agent/pfg_agent ./pfg_agent
