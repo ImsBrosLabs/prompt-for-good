@@ -1,0 +1,9 @@
+FROM eclipse-temurin:21-jdk
+
+WORKDIR /workspace
+
+ENV GRADLE_USER_HOME=/gradle-cache
+
+EXPOSE 8080
+
+CMD ["./gradlew", "bootRun", "--no-daemon"]

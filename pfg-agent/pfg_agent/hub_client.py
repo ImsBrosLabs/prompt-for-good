@@ -1,5 +1,7 @@
 """HTTP client for the pfg-hub REST API."""
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -19,13 +21,25 @@ class Issue:
 
 
 class HubClient:
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str,
+        request_timeout: float = 10.0,
+        retry_attempts: int = 5,
+        retry_delay_seconds: float = 2.0,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.headers = {"X-Runner-Token": token}
+        self.request_timeout = request_timeout
+        self.retry_attempts = retry_attempts
+        self.retry_delay_seconds = retry_delay_seconds
+        self._sleep = sleep
 
     def get_next_issue(self) -> Issue | None:
         """Fetch the next pending issue from the FIFO queue."""
-        resp = httpx.get(f"{self.base_url}/issues/next", headers=self.headers)
+        resp = self._request("GET", "/issues/next")
         if resp.status_code == 204:
             return None
         resp.raise_for_status()
@@ -34,7 +48,7 @@ class HubClient:
 
     def claim_issue(self, issue_id: str) -> Issue:
         """Claim an issue so other runners skip it."""
-        resp = httpx.post(f"{self.base_url}/issues/{issue_id}/claim", headers=self.headers)
+        resp = self._request("POST", f"/issues/{issue_id}/claim")
         resp.raise_for_status()
         return _parse_issue(resp.json())
 
@@ -53,22 +67,52 @@ class HubClient:
             "tokensUsed": tokens_used,
             "errorMessage": error_message,
         }
-        resp = httpx.post(
-            f"{self.base_url}/issues/{issue_id}/done",
-            json=payload,
-            headers=self.headers,
-        )
+        resp = self._request("POST", f"/issues/{issue_id}/done", json=payload)
         resp.raise_for_status()
         log.info("reported to hub", issue_id=issue_id, success=success)
 
     def heartbeat(self, runner_id: str, quota_remaining: int) -> None:
         payload = {"quotaRemainingToday": quota_remaining}
-        resp = httpx.post(
-            f"{self.base_url}/runners/{runner_id}/heartbeat",
-            json=payload,
-            headers=self.headers,
-        )
+        resp = self._request("POST", f"/runners/{runner_id}/heartbeat", json=payload)
         resp.raise_for_status()
+
+    def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
+        """Run a pfg-hub request with bounded retries for transient network failures."""
+        url = f"{self.base_url}{path}"
+        max_attempts = self.retry_attempts + 1
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return httpx.request(
+                    method,
+                    url,
+                    headers=self.headers,
+                    timeout=self.request_timeout,
+                    **kwargs,
+                )
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                if attempt == max_attempts:
+                    log.error(
+                        "hub request failed",
+                        method=method,
+                        url=url,
+                        attempts=attempt,
+                        error=str(exc),
+                    )
+                    raise
+
+                log.warning(
+                    "hub request failed, retrying",
+                    method=method,
+                    url=url,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    delay_seconds=self.retry_delay_seconds,
+                    error=str(exc),
+                )
+                self._sleep(self.retry_delay_seconds)
+
+        raise RuntimeError("unreachable hub retry state")
 
 
 def _parse_issue(data: dict) -> Issue:

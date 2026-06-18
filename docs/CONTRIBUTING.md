@@ -28,10 +28,10 @@ Thank you for wanting to contribute! Here's how to get involved.
 git clone https://github.com/ImsBrosLabs/prompt-for-good.git
 cd prompt-for-good/pfg-runner
 
-# 2. Copy the example config
-cp pfg.example.yaml pfg.yaml
+# 2. Copy the example env config used by Docker Compose
+cp .env.example .env
 
-# 3. Edit pfg.yaml
+# 3. Edit .env
 #    - Set your contributor name
 #    - Configure active hours and daily token limit
 
@@ -52,8 +52,7 @@ PFG_TOKEN=<your pfg hub token>
 
 ### Prerequisites
 
-- JDK 21+
-- Docker (for local PostgreSQL)
+- Docker
 - Kotlin-aware IDE (IntelliJ IDEA recommended)
 
 ### Setup
@@ -61,14 +60,37 @@ PFG_TOKEN=<your pfg hub token>
 ```bash
 cd pfg-hub
 
-# Start PostgreSQL
-docker compose -f docker-compose.dev.yml up -d
+# Start PostgreSQL + pfg-hub with JDK 21 inside Docker
+docker compose up --build
+```
+
+The hub is available at:
+
+```text
+http://localhost:8080
+http://localhost:8080/swagger-ui.html
+```
+
+### Running tests in Docker
+
+```bash
+cd pfg-hub
+docker compose run --rm hub ./gradlew test --no-daemon
+```
+
+### Optional native setup
+
+If you prefer running the hub directly on your machine, install JDK 21+ and run:
+
+```bash
+cd pfg-hub
+docker compose up -d postgres
 
 # Run the application
 ./gradlew bootRun
 ```
 
-### Running tests
+### Running native tests
 
 ```bash
 ./gradlew test
@@ -77,6 +99,27 @@ docker compose -f docker-compose.dev.yml up -d
 ---
 
 ## Developing pfg-agent
+
+### Prerequisites
+
+- Docker
+
+### Setup with Docker
+
+```bash
+cd pfg-agent
+
+# Run tests inside the container
+docker compose run --rm agent
+
+# Run lint / format checks
+docker compose run --rm agent uv run --extra dev ruff check .
+docker compose run --rm agent uv run --extra dev ruff format --check .
+```
+
+### Optional native setup
+
+If you prefer running the agent directly on your machine:
 
 ### Prerequisites
 

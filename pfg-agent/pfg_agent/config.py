@@ -10,6 +10,15 @@ class Settings(BaseSettings):
     # Hub connection
     pfg_hub_url: str = Field(..., description="URL of the pfg-hub server")
     pfg_token: str = Field(..., description="Runner token for pfg-hub authentication")
+    pfg_hub_request_timeout: float = Field(
+        10.0, description="Timeout in seconds for pfg-hub HTTP requests"
+    )
+    pfg_hub_retry_attempts: int = Field(
+        5, description="Retry attempts for transient pfg-hub connection failures"
+    )
+    pfg_hub_retry_delay_seconds: float = Field(
+        2.0, description="Delay between pfg-hub retry attempts"
+    )
 
     # LLM
     anthropic_api_key: str = Field(..., description="Anthropic API key")

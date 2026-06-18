@@ -1,6 +1,9 @@
 """Tests for hub_client parsing logic."""
 
-from pfg_agent.hub_client import Issue, _parse_issue
+import httpx
+import pytest
+
+from pfg_agent.hub_client import HubClient, Issue, _parse_issue
 
 
 def _issue_data(**kwargs):
@@ -55,3 +58,59 @@ def test_issue_is_dataclass():
         labels=[],
     )
     assert issue.id == "x"
+
+
+def test_get_next_issue_retries_transient_connection_error(monkeypatch):
+    calls = []
+    sleeps = []
+    request = httpx.Request("GET", "http://hub.test/issues/next")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if len(calls) == 1:
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(204)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient(
+        "http://hub.test",
+        "token",
+        request_timeout=1.5,
+        retry_attempts=2,
+        retry_delay_seconds=0.25,
+        sleep=sleeps.append,
+    )
+
+    assert client.get_next_issue() is None
+    assert len(calls) == 2
+    assert sleeps == [0.25]
+    assert calls[0] == (
+        "GET",
+        "http://hub.test/issues/next",
+        {"headers": {"X-Runner-Token": "token"}, "timeout": 1.5},
+    )
+
+
+def test_get_next_issue_raises_after_retry_attempts(monkeypatch):
+    calls = []
+    request = httpx.Request("GET", "http://hub.test/issues/next")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        raise httpx.ConnectError("connection refused", request=request)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient(
+        "http://hub.test",
+        "token",
+        retry_attempts=2,
+        retry_delay_seconds=0,
+        sleep=lambda delay: None,
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        client.get_next_issue()
+
+    assert len(calls) == 3

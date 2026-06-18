@@ -9,6 +9,35 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pfg -d pfg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pfg
+      SPRING_DATASOURCE_USERNAME: pfg
+      SPRING_DATASOURCE_PASSWORD: pfg
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
+      ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/workspace
+      - gradle_cache:/gradle-cache
+      - hub_build:/workspace/build
+      - hub_project_gradle:/workspace/.gradle
 
 volumes:
   postgres_data:
+  gradle_cache:
+  hub_build:
+  hub_project_gradle:

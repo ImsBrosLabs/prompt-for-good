@@ -22,6 +22,9 @@ class AgentPipeline:
         self.hub = HubClient(
             base_url=settings.pfg_hub_url,
             token=settings.pfg_token,
+            request_timeout=settings.pfg_hub_request_timeout,
+            retry_attempts=settings.pfg_hub_retry_attempts,
+            retry_delay_seconds=settings.pfg_hub_retry_delay_seconds,
         )
         self.tokens_used_today: int = 0
 
