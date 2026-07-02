@@ -80,6 +80,137 @@ docker run -v $(pwd)/pfg.yaml:/app/pfg.yaml \
   ghcr.io/imsbrostabs/pfg-runner:latest
 ```
 
+## Development
+
+You can develop with Docker-based services or with native local tooling. The
+root `.env` file is only used by the root `docker-compose.yml`; native setups
+use the component-specific files such as `pfg-agent/.env.example`.
+
+### Option A: Docker-based development
+
+Use this path if you do not want to install Java, Python, Gradle, `uv`, or
+PostgreSQL locally.
+
+From the repository root:
+
+```bash
+cp .env.example .env
+docker compose build
+```
+
+The root `.env` configures the services in `docker-compose.yml`:
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `PFG_HUB_PORT` | `hub` | Host port for the Spring Boot API |
+| `PFG_POSTGRES_PORT` | `postgres` | Host port for the dev database |
+| `ADMIN_KEY` | `hub` | Admin token for `/seed/**` endpoints |
+| `GITHUB_TOKEN` | `hub`, `agent`, `runner` | GitHub API token when real calls are needed |
+| `PFG_HUB_URL` | `agent`, `runner` | Hub URL seen from containers |
+| `PFG_TOKEN` | `agent`, `runner` | Runner token used to call the hub |
+| `RUNNER_ID` | `agent`, `runner` | Registered runner id |
+| `ANTHROPIC_API_KEY` | `agent`, `runner` | LLM API key |
+| `CONTRIBUTOR_NAME` | `agent`, `runner` | Contributor display name |
+| `MAX_TOKENS_PER_DAY` | `agent`, `runner` | Local daily LLM budget |
+
+Run the hub:
+
+```bash
+docker compose up hub
+```
+
+The hub is available at:
+
+```text
+http://localhost:8080
+http://localhost:8080/swagger-ui.html
+```
+
+Run hub checks:
+
+```bash
+# Full hub test suite
+docker compose run --rm hub-test
+
+# One hub test class
+docker compose run --rm hub-test ./gradlew test --tests dev.promptforgood.service.ScoringServiceTest --no-daemon
+
+# Kotlin lint
+docker compose run --rm hub-lint
+```
+
+Run agent checks:
+
+```bash
+# Full agent test suite
+docker compose run --rm agent-test
+
+# One agent test file
+docker compose run --rm agent-test uv run --extra dev pytest tests/test_context.py -q
+
+# Python lint / format checks
+docker compose run --rm agent-lint
+docker compose run --rm agent-format-check
+```
+
+Run the agent against the local hub:
+
+```bash
+docker compose up hub
+docker compose run --rm agent
+```
+
+Run the local runner image:
+
+```bash
+docker compose --profile runner up runner
+```
+
+### Option B: Native development
+
+Use this path if you prefer local IDE/tooling integration.
+
+For `pfg-hub`, install JDK 21+. You can still use Docker only for PostgreSQL:
+
+```bash
+cd pfg-hub
+docker compose up -d postgres
+./gradlew bootRun
+```
+
+Run hub tests natively:
+
+```bash
+cd pfg-hub
+./gradlew test
+./gradlew ktlintCheck
+```
+
+For `pfg-agent`, install Python 3.11+ and `uv`:
+
+```bash
+cd pfg-agent
+cp .env.example .env
+uv sync --extra dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+```
+
+The native `pfg-agent/.env` configures the agent process itself. It is separate
+from the root `.env` used by Docker Compose.
+
+For `pfg-runner`, use the runner-specific Compose setup:
+
+```bash
+cd pfg-runner
+cp .env.example .env
+docker compose up
+```
+
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for more contribution
+workflow details.
+
 ---
 
 ## Milestones

@@ -8,26 +8,44 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 /**
  * Shared base for all @SpringBootTest integration tests.
  *
- * The container is started once in the companion object static initializer and
- * reused for the entire JVM process, across every subclass and every Spring
- * application context (including those with @MockkBean that force a new context).
- * Testcontainers registers a JVM shutdown hook that stops the container at the end.
+ * Docker-based test runs provide SPRING_DATASOURCE_* and reuse the Postgres
+ * service from Docker Compose. Native runs without those variables fall back to
+ * a Testcontainers PostgreSQL instance, started once for the whole JVM process.
  *
  * @DynamicPropertySource injects the JDBC URL / credentials into every Spring
- * context that loads this base class, so each context connects to the same database.
+ * context that loads this base class, so each context connects to the selected database.
  */
 @ActiveProfiles("test")
 abstract class IntegrationTestBase {
     companion object {
-        private val postgres: PostgreSQLContainer =
-            PostgreSQLContainer("postgres:17-alpine").apply { start() }
+        private val externalJdbcUrl = System.getenv("SPRING_DATASOURCE_URL")?.takeIf { it.isNotBlank() }
+        private val externalUsername =
+            System.getenv("SPRING_DATASOURCE_USERNAME")?.takeIf { it.isNotBlank() } ?: "pfg"
+        private val externalPassword =
+            System.getenv("SPRING_DATASOURCE_PASSWORD")?.takeIf { it.isNotBlank() } ?: "pfg"
+
+        private val postgres =
+            if (externalJdbcUrl == null) {
+                PostgreSQLContainer("postgres:17-alpine").apply { start() }
+            } else {
+                null
+            }
 
         @DynamicPropertySource
         @JvmStatic
         fun configureDataSource(registry: DynamicPropertyRegistry) {
-            registry.add("spring.datasource.url", postgres::getJdbcUrl)
-            registry.add("spring.datasource.username", postgres::getUsername)
-            registry.add("spring.datasource.password", postgres::getPassword)
+            val jdbcUrl = externalJdbcUrl
+            if (jdbcUrl != null) {
+                registry.add("spring.datasource.url") { jdbcUrl }
+                registry.add("spring.datasource.username") { externalUsername }
+                registry.add("spring.datasource.password") { externalPassword }
+                return
+            }
+
+            val container = requireNotNull(postgres)
+            registry.add("spring.datasource.url") { container.jdbcUrl }
+            registry.add("spring.datasource.username") { container.username }
+            registry.add("spring.datasource.password") { container.password }
         }
     }
 }

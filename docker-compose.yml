@@ -1,0 +1,173 @@
+name: prompt-for-good
+
+x-hub-environment: &hub-environment
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pfg
+  SPRING_DATASOURCE_USERNAME: pfg
+  SPRING_DATASOURCE_PASSWORD: pfg
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
+  ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
+
+x-hub-test-environment: &hub-test-environment
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-test:5432/pfg_test
+  SPRING_DATASOURCE_USERNAME: pfg
+  SPRING_DATASOURCE_PASSWORD: pfg
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
+  ADMIN_KEY: ${ADMIN_KEY:-test-admin-key}
+
+x-hub-volumes: &hub-volumes
+  - ./pfg-hub:/workspace
+  - hub_gradle_cache:/gradle-cache
+  - hub_build:/workspace/build
+  - hub_project_gradle:/workspace/.gradle
+
+x-agent-environment: &agent-environment
+  PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
+  PFG_TOKEN: ${PFG_TOKEN:-test-token}
+  RUNNER_ID: ${RUNNER_ID:-00000000-0000-0000-0000-000000000000}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-key}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-ghp_test_token}
+  CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
+  MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
+
+x-agent-volumes: &agent-volumes
+  - ./pfg-agent:/workspace
+  - agent_venv:/workspace/.venv
+  - agent_uv_cache:/uv-cache
+  - pfg_work:/tmp/pfg-work
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pfg
+      POSTGRES_USER: pfg
+      POSTGRES_PASSWORD: pfg
+    ports:
+      - "${PFG_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pfg -d pfg"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-test:
+    image: postgres:17-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: pfg_test
+      POSTGRES_USER: pfg
+      POSTGRES_PASSWORD: pfg
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pfg -d pfg_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hub:
+    build:
+      context: ./pfg-hub
+      dockerfile: Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *hub-environment
+    ports:
+      - "${PFG_HUB_PORT:-8080}:8080"
+    volumes: *hub-volumes
+
+  hub-test:
+    build:
+      context: ./pfg-hub
+      dockerfile: Dockerfile.dev
+    profiles: ["test"]
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    environment:
+      <<: *hub-test-environment
+    volumes: *hub-volumes
+    command: ["./gradlew", "test", "--no-daemon"]
+
+  hub-lint:
+    build:
+      context: ./pfg-hub
+      dockerfile: Dockerfile.dev
+    profiles: ["test"]
+    volumes: *hub-volumes
+    command: ["./gradlew", "ktlintCheck", "--no-daemon"]
+
+  agent:
+    build:
+      context: ./pfg-agent
+      dockerfile: Dockerfile.dev
+    profiles: ["agent"]
+    depends_on:
+      hub:
+        condition: service_started
+    environment:
+      <<: *agent-environment
+    volumes: *agent-volumes
+    command: ["uv", "run", "pfg-agent"]
+
+  agent-test:
+    build:
+      context: ./pfg-agent
+      dockerfile: Dockerfile.dev
+    profiles: ["test"]
+    environment:
+      <<: *agent-environment
+    volumes: *agent-volumes
+    command: ["uv", "run", "--extra", "dev", "pytest", "-q"]
+
+  agent-lint:
+    build:
+      context: ./pfg-agent
+      dockerfile: Dockerfile.dev
+    profiles: ["test"]
+    environment:
+      <<: *agent-environment
+    volumes: *agent-volumes
+    command: ["uv", "run", "--extra", "dev", "ruff", "check", "."]
+
+  agent-format-check:
+    build:
+      context: ./pfg-agent
+      dockerfile: Dockerfile.dev
+    profiles: ["test"]
+    environment:
+      <<: *agent-environment
+    volumes: *agent-volumes
+    command: ["uv", "run", "--extra", "dev", "ruff", "format", "--check", "."]
+
+  runner:
+    build:
+      context: .
+      dockerfile: pfg-runner/Dockerfile
+    profiles: ["runner"]
+    depends_on:
+      hub:
+        condition: service_started
+    environment:
+      PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
+      PFG_TOKEN: ${PFG_TOKEN:-}
+      RUNNER_ID: ${RUNNER_ID:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
+      MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
+    volumes:
+      - pfg_work:/tmp/pfg-work
+
+volumes:
+  postgres_data:
+  hub_gradle_cache:
+  hub_build:
+  hub_project_gradle:
+  agent_venv:
+  agent_uv_cache:
+  pfg_work:

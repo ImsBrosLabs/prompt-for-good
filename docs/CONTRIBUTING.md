@@ -11,6 +11,98 @@ Thank you for wanting to contribute! Here's how to get involved.
 
 ---
 
+## Development setup options
+
+You can develop with either a Docker-based environment or a native local
+environment. Both paths are supported so contributors can choose the workflow
+that fits their machine and preferences.
+
+### Docker-based setup
+
+From the repository root:
+
+```bash
+cp .env.example .env
+docker compose build
+```
+
+The root `.env` configures the services declared in the root `docker-compose.yml`.
+Native setups use component-specific env files, such as `pfg-agent/.env.example`
+or `pfg-runner/.env.example`.
+
+On Windows/WSL, enable Docker Desktop integration for the distro that contains
+the repository before running these commands.
+
+### Run pfg-hub locally
+
+```bash
+docker compose up hub
+```
+
+The hub is available at:
+
+```text
+http://localhost:8080
+http://localhost:8080/swagger-ui.html
+```
+
+### Test pfg-hub
+
+```bash
+# Full hub test suite
+docker compose run --rm hub-test
+
+# One test class
+docker compose run --rm hub-test ./gradlew test --tests dev.promptforgood.service.ScoringServiceTest --no-daemon
+
+# Kotlin lint
+docker compose run --rm hub-lint
+```
+
+The Docker test path uses a dedicated `postgres-test` container. Native and CI
+runs can still use Testcontainers when no external datasource is provided.
+
+### Test pfg-agent
+
+```bash
+# Full agent test suite
+docker compose run --rm agent-test
+
+# One test file
+docker compose run --rm agent-test uv run --extra dev pytest tests/test_context.py -q
+
+# Python lint / format checks
+docker compose run --rm agent-lint
+docker compose run --rm agent-format-check
+```
+
+### Run pfg-agent against the local hub
+
+```bash
+docker compose up hub
+docker compose run --rm agent
+```
+
+### Run pfg-runner locally
+
+Fill the real runner values in `.env`, then run:
+
+```bash
+docker compose --profile runner up runner
+```
+
+### Native setup overview
+
+For native development, install only the stack you are working on:
+
+- `pfg-hub`: JDK 21+; Docker is still useful for PostgreSQL, or provide your own PostgreSQL.
+- `pfg-agent`: Python 3.11+ and `uv` or `pip`.
+- `pfg-runner`: Docker, because the runner itself is distributed as a container.
+
+Detailed commands are listed in the component sections below.
+
+---
+
 ## Running a pfg-runner (donate your API quota)
 
 > Available from **Milestone 4**. Stay tuned.
@@ -33,7 +125,8 @@ cp .env.example .env
 
 # 3. Edit .env
 #    - Set your contributor name
-#    - Configure active hours and daily token limit
+#    - Set PFG_TOKEN, ANTHROPIC_API_KEY, and GITHUB_TOKEN
+#    - Configure the daily token limit
 
 # 4. Run
 docker compose up
@@ -52,16 +145,15 @@ PFG_TOKEN=<your pfg hub token>
 
 ### Prerequisites
 
-- Docker
+- Docker, when using the containerized setup
+- JDK 21+, when using the native setup
 - Kotlin-aware IDE (IntelliJ IDEA recommended)
 
-### Setup
+### Docker setup
 
 ```bash
-cd pfg-hub
-
 # Start PostgreSQL + pfg-hub with JDK 21 inside Docker
-docker compose up --build
+docker compose up hub
 ```
 
 The hub is available at:
@@ -74,13 +166,12 @@ http://localhost:8080/swagger-ui.html
 ### Running tests in Docker
 
 ```bash
-cd pfg-hub
-docker compose run --rm hub ./gradlew test --no-daemon
+docker compose run --rm hub-test
 ```
 
-### Optional native setup
+### Native setup
 
-If you prefer running the hub directly on your machine, install JDK 21+ and run:
+If you prefer running the hub directly on your machine:
 
 ```bash
 cd pfg-hub
@@ -102,31 +193,21 @@ docker compose up -d postgres
 
 ### Prerequisites
 
-- Docker
+- Docker, when using the containerized setup
+- Python 3.11+ and `uv` or `pip`, when using the native setup
 
-### Setup with Docker
+### Docker setup
 
 ```bash
-cd pfg-agent
-
 # Run tests inside the container
-docker compose run --rm agent
+docker compose run --rm agent-test
 
 # Run lint / format checks
-docker compose run --rm agent uv run --extra dev ruff check .
-docker compose run --rm agent uv run --extra dev ruff format --check .
+docker compose run --rm agent-lint
+docker compose run --rm agent-format-check
 ```
 
-### Optional native setup
-
-If you prefer running the agent directly on your machine:
-
-### Prerequisites
-
-- Python 3.11+
-- `uv` (recommended) or `pip`
-
-### Setup
+### Native setup
 
 ```bash
 cd pfg-agent
@@ -140,7 +221,7 @@ cp .env.example .env
 # Fill in ANTHROPIC_API_KEY, GITHUB_TOKEN, PFG_HUB_URL
 ```
 
-### Running tests
+Run tests:
 
 ```bash
 pytest

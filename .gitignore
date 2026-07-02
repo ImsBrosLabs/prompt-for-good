@@ -9,6 +9,7 @@ pfg.yaml
 
 # JVM / Kotlin / Gradle
 .gradle/
+.kotlin/
 build/
 *.class
 *.jar
