@@ -143,6 +143,10 @@ PFG_TOKEN=<your pfg hub token>
 
 ## Developing pfg-hub
 
+If you are new to the hub internals, read the
+[pfg-hub onboarding guide](PFG_HUB_ONBOARDING.md) first. It maps the NestJS
+modules, Drizzle database layer, runner flow, and issue lifecycle.
+
 ### Prerequisites
 
 - Docker, when using the containerized setup

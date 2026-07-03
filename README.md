@@ -62,6 +62,10 @@ prompt-for-good/
 └── docs/             # Architecture, ADRs, contributing guides
 ```
 
+New to the hub codebase? Start with the
+[pfg-hub onboarding guide](docs/PFG_HUB_ONBOARDING.md), especially if you know
+NestJS with TypeORM and want the Drizzle mental model.
+
 ---
 
 ## Quick Start (Contributors)
