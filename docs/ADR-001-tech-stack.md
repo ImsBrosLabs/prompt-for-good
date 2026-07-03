@@ -6,7 +6,7 @@
 ## Context
 
 We needed to choose the technology stack for each component of the pfg system. The main constraints were:
-- pfg-hub maintainer is a senior Kotlin/Spring Boot engineer
+- pfg-hub should share TypeScript tooling with future API/dashboard work
 - pfg-agent needs the best available LLM tooling ecosystem
 - pfg-runner must be easy for contributors to deploy
 
@@ -14,7 +14,7 @@ We needed to choose the technology stack for each component of the pfg system. T
 
 | Component | Technology | Rationale |
 |---|---|---|
-| pfg-hub | Kotlin + Spring Boot + PostgreSQL | Maintainer's primary stack; strong typing, mature ecosystem, JPA for DB |
+| pfg-hub | NestJS + Drizzle + PostgreSQL | TypeScript backend with explicit SQL mapping, generated OpenAPI types, and a familiar modular service structure |
 | pfg-agent | Python + LangChain + GitPython | Best LLM tooling ecosystem; rich GitHub/git libraries |
 | pfg-runner | Docker | Universal deployment; contributors need zero setup beyond Docker |
 | Default LLM | Claude 3.5 Sonnet (Anthropic) | Best code generation quality at launch; extensible to other providers |
@@ -22,5 +22,5 @@ We needed to choose the technology stack for each component of the pfg system. T
 ## Consequences
 
 - pfg-hub and pfg-agent are separate services communicating via REST
-- Python is used only for the agent; no Python in the hub
+- Python is used only for the agent; TypeScript is used for the hub
 - Architecture is plugin-friendly for adding new LLM providers in the future

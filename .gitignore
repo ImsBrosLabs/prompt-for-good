@@ -7,20 +7,6 @@
 pfg.yaml
 !pfg.example.yaml
 
-# JVM / Kotlin / Gradle
-.gradle/
-.kotlin/
-build/
-*.class
-*.jar
-*.war
-*.ear
-out/
-.idea/
-*.iml
-*.iws
-*.ipr
-
 # Python
 __pycache__/
 *.py[cod]
@@ -35,6 +21,20 @@ venv/
 .mypy_cache/
 htmlcov/
 .coverage
+
+# Node / TypeScript
+node_modules/
+**/node_modules/
+coverage/
+*.tsbuildinfo
+
+# IDE / build
+build/
+out/
+.idea/
+*.iml
+*.iws
+*.ipr
 
 # Docker
 *.log

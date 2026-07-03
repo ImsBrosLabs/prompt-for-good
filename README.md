@@ -56,7 +56,7 @@
 
 ```
 prompt-for-good/
-├── pfg-hub/          # Central server (Kotlin + Spring Boot + PostgreSQL)
+├── pfg-hub/          # Central server (NestJS + Drizzle + PostgreSQL)
 ├── pfg-agent/        # Autonomous AI agent (Python + LangChain)
 ├── pfg-runner/       # Docker container wrapping pfg-agent
 └── docs/             # Architecture, ADRs, contributing guides
@@ -88,7 +88,7 @@ use the component-specific files such as `pfg-agent/.env.example`.
 
 ### Option A: Docker-based development
 
-Use this path if you do not want to install Java, Python, Gradle, `uv`, or
+Use this path if you do not want to install Node.js, Python, `uv`, or
 PostgreSQL locally.
 
 From the repository root:
@@ -102,7 +102,7 @@ The root `.env` configures the services in `docker-compose.yml`:
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `PFG_HUB_PORT` | `hub` | Host port for the Spring Boot API |
+| `PFG_HUB_PORT` | `hub` | Host port for the hub API |
 | `PFG_POSTGRES_PORT` | `postgres` | Host port for the dev database |
 | `ADMIN_KEY` | `hub` | Admin token for `/seed/**` endpoints |
 | `GITHUB_TOKEN` | `hub`, `agent`, `runner` | GitHub API token when real calls are needed |
@@ -132,10 +132,10 @@ Run hub checks:
 # Full hub test suite
 docker compose run --rm hub-test
 
-# One hub test class
-docker compose run --rm hub-test ./gradlew test --tests dev.promptforgood.service.ScoringServiceTest --no-daemon
+# One hub test file
+docker compose run --rm hub-test npm test -- test/scoring.service.spec.ts
 
-# Kotlin lint
+# TypeScript lint
 docker compose run --rm hub-lint
 ```
 
@@ -170,20 +170,23 @@ docker compose --profile runner up runner
 
 Use this path if you prefer local IDE/tooling integration.
 
-For `pfg-hub`, install JDK 21+. You can still use Docker only for PostgreSQL:
+For `pfg-hub`, install Node.js 22+. You can still use Docker only for PostgreSQL:
 
 ```bash
 cd pfg-hub
 docker compose up -d postgres
-./gradlew bootRun
+npm install
+npm run generate:openapi-types
+npm run db:migrate
+npm run dev
 ```
 
 Run hub tests natively:
 
 ```bash
 cd pfg-hub
-./gradlew test
-./gradlew ktlintCheck
+npm test
+npm run lint
 ```
 
 For `pfg-agent`, install Python 3.11+ and `uv`:
@@ -227,7 +230,7 @@ workflow details.
 
 | Component | Stack |
 |---|---|
-| pfg-hub | Kotlin, Spring Boot, PostgreSQL |
+| pfg-hub | NestJS, Drizzle, PostgreSQL |
 | pfg-agent | Python, LangChain, GitPython |
 | pfg-runner | Docker |
 | Default LLM | Claude (claude-sonnet-4-6), extensible to OpenAI/Gemini |

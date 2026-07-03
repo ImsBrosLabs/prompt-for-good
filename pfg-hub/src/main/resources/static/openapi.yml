@@ -437,14 +437,14 @@ paths:
           required: true
           schema:
             type: string
-          example: spring-projects
+          example: nodejs
           description: GitHub organisation or user login
         - name: name
           in: query
           required: true
           schema:
             type: string
-          example: spring-boot
+          example: node
           description: Repository name
       responses:
         "200":
@@ -464,7 +464,7 @@ paths:
       summary: Seed default repositories
       description: >
         Seeds a curated list of well-known repositories
-        (spring-boot, requests, scikit-learn) — useful for initial setup.
+        (node, requests, scikit-learn) — useful for initial setup.
         Requires a valid X-Admin-Token header — admin-only endpoint.
       security:
         - AdminToken: []
