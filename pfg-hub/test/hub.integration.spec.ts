@@ -19,6 +19,7 @@ describeDb("hub integration", () => {
   let app: INestApplication;
   let db: Database;
   let pool: Pool;
+  const originalAdminKey = process.env.ADMIN_KEY;
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = "test-admin-key";
@@ -29,6 +30,7 @@ describeDb("hub integration", () => {
       new FastifyAdapter(),
     );
     await app.init();
+    await app.getHttpAdapter().getInstance().ready();
     db = app.get<Database>(DATABASE);
     pool = app.get<Pool>(PG_POOL);
   });
@@ -40,6 +42,11 @@ describeDb("hub integration", () => {
   });
 
   afterAll(async () => {
+    if (originalAdminKey === undefined) {
+      delete process.env.ADMIN_KEY;
+    } else {
+      process.env.ADMIN_KEY = originalAdminKey;
+    }
     await app?.close();
   });
 
