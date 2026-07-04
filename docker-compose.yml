@@ -1,24 +1,19 @@
 name: prompt-for-good
 
 x-hub-environment: &hub-environment
-  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pfg
-  SPRING_DATASOURCE_USERNAME: pfg
-  SPRING_DATASOURCE_PASSWORD: pfg
+  DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg
   GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
   ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
 
 x-hub-test-environment: &hub-test-environment
-  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-test:5432/pfg_test
-  SPRING_DATASOURCE_USERNAME: pfg
-  SPRING_DATASOURCE_PASSWORD: pfg
+  DATABASE_URL: postgresql://pfg:pfg@postgres-test:5432/pfg_test
   GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
   ADMIN_KEY: ${ADMIN_KEY:-test-admin-key}
+  RUN_DB_TESTS: "true"
 
 x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
-  - hub_gradle_cache:/gradle-cache
-  - hub_build:/workspace/build
-  - hub_project_gradle:/workspace/.gradle
+  - hub_node_modules:/workspace/node_modules
 
 x-agent-environment: &agent-environment
   PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
@@ -91,7 +86,7 @@ services:
     environment:
       <<: *hub-test-environment
     volumes: *hub-volumes
-    command: ["./gradlew", "test", "--no-daemon"]
+    command: ["sh", "-c", "npm run db:migrate && npm test"]
 
   hub-lint:
     build:
@@ -99,7 +94,7 @@ services:
       dockerfile: Dockerfile.dev
     profiles: ["test"]
     volumes: *hub-volumes
-    command: ["./gradlew", "ktlintCheck", "--no-daemon"]
+    command: ["npm", "run", "lint"]
 
   agent:
     build:
@@ -165,9 +160,7 @@ services:
 
 volumes:
   postgres_data:
-  hub_gradle_cache:
-  hub_build:
-  hub_project_gradle:
+  hub_node_modules:
   agent_venv:
   agent_uv_cache:
   pfg_work:

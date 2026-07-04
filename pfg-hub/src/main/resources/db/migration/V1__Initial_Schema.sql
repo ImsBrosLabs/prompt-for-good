@@ -1,4 +1,4 @@
-CREATE TABLE repos (
+CREATE TABLE IF NOT EXISTS repos (
     id VARCHAR(36) PRIMARY KEY,
     github_url VARCHAR(255) NOT NULL UNIQUE,
     owner VARCHAR(255) NOT NULL,
@@ -11,7 +11,7 @@ CREATE TABLE repos (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE issues (
+CREATE TABLE IF NOT EXISTS issues (
     id VARCHAR(36) PRIMARY KEY,
     repo_id VARCHAR(36) NOT NULL REFERENCES repos(id),
     github_id BIGINT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE issues (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE runners (
+CREATE TABLE IF NOT EXISTS runners (
     id VARCHAR(36) PRIMARY KEY,
     token VARCHAR(255) NOT NULL UNIQUE,
     contributor_name VARCHAR(255) NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE runners (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE contributions (
+CREATE TABLE IF NOT EXISTS contributions (
     id VARCHAR(36) PRIMARY KEY,
     issue_id VARCHAR(36) NOT NULL REFERENCES issues(id),
     runner_id VARCHAR(36) NOT NULL REFERENCES runners(id),
@@ -49,6 +49,6 @@ CREATE TABLE contributions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_issues_status ON issues(status);
-CREATE INDEX idx_issues_score ON issues(score);
-CREATE INDEX idx_runners_token ON runners(token);
+CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
+CREATE INDEX IF NOT EXISTS idx_issues_score ON issues(score);
+CREATE INDEX IF NOT EXISTS idx_runners_token ON runners(token);

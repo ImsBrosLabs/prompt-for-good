@@ -14,7 +14,7 @@ The central server. Hosts the pre-qualified issue queue and coordinates runners.
 - Runner registry with heartbeat tracking and token quota monitoring
 - Contribution log (PR URLs, status, timestamps)
 
-**Stack:** Kotlin · Spring Boot · PostgreSQL · GitHub REST API
+**Stack:** NestJS · TypeScript · Drizzle · PostgreSQL · GitHub REST API
 
 **REST API:**
 ```
@@ -146,7 +146,7 @@ pfg-runner (running on contributor machine)
 | Shallow clone | Minimize disk usage and clone time on contributor machines |
 | Bring-your-own API key | Contributors control their spending; no central API key risk |
 | Claude-first, plugin-friendly | Start with the best available model; allow OpenAI/Gemini later |
-| Kotlin for pfg-hub | Said's primary language; strong typing, Spring Boot ecosystem |
+| TypeScript for pfg-hub | Shared language for API/dashboard work; strong generated OpenAPI types; Drizzle keeps SQL mapping explicit |
 | Python for pfg-agent | Best LangChain / LLM tooling ecosystem |
 
 ---

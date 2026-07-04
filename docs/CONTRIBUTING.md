@@ -5,7 +5,7 @@ Thank you for wanting to contribute! Here's how to get involved.
 ## Ways to Contribute
 
 - **Run a pfg-runner:** Donate your unused LLM quota (see below)
-- **Improve pfg-hub:** Kotlin/Spring Boot backend contributions
+- **Improve pfg-hub:** NestJS/TypeScript backend contributions
 - **Improve pfg-agent:** Python/LangChain AI pipeline contributions
 - **Suggest repos:** Open an issue to nominate an open-source project for the hub
 
@@ -52,15 +52,15 @@ http://localhost:8080/swagger-ui.html
 # Full hub test suite
 docker compose run --rm hub-test
 
-# One test class
-docker compose run --rm hub-test ./gradlew test --tests dev.promptforgood.service.ScoringServiceTest --no-daemon
+# One test file
+docker compose run --rm hub-test npm test -- test/scoring.service.spec.ts
 
-# Kotlin lint
+# TypeScript lint
 docker compose run --rm hub-lint
 ```
 
-The Docker test path uses a dedicated `postgres-test` container. Native and CI
-runs can still use Testcontainers when no external datasource is provided.
+The Docker test path uses a dedicated `postgres-test` container and enables the
+DB integration specs with `RUN_DB_TESTS=true`.
 
 ### Test pfg-agent
 
@@ -95,7 +95,7 @@ docker compose --profile runner up runner
 
 For native development, install only the stack you are working on:
 
-- `pfg-hub`: JDK 21+; Docker is still useful for PostgreSQL, or provide your own PostgreSQL.
+- `pfg-hub`: Node.js 22+; Docker is still useful for PostgreSQL, or provide your own PostgreSQL.
 - `pfg-agent`: Python 3.11+ and `uv` or `pip`.
 - `pfg-runner`: Docker, because the runner itself is distributed as a container.
 
@@ -143,16 +143,20 @@ PFG_TOKEN=<your pfg hub token>
 
 ## Developing pfg-hub
 
+If you are new to the hub internals, read the
+[pfg-hub onboarding guide](PFG_HUB_ONBOARDING.md) first. It maps the NestJS
+modules, Drizzle database layer, runner flow, and issue lifecycle.
+
 ### Prerequisites
 
 - Docker, when using the containerized setup
-- JDK 21+, when using the native setup
-- Kotlin-aware IDE (IntelliJ IDEA recommended)
+- Node.js 22+, when using the native setup
+- TypeScript-aware IDE
 
 ### Docker setup
 
 ```bash
-# Start PostgreSQL + pfg-hub with JDK 21 inside Docker
+# Start PostgreSQL + pfg-hub with Node.js inside Docker
 docker compose up hub
 ```
 
@@ -178,13 +182,17 @@ cd pfg-hub
 docker compose up -d postgres
 
 # Run the application
-./gradlew bootRun
+npm install
+npm run generate:openapi-types
+npm run db:migrate
+npm run dev
 ```
 
 ### Running native tests
 
 ```bash
-./gradlew test
+npm test
+npm run lint
 ```
 
 ---
@@ -231,7 +239,7 @@ pytest
 
 ## Code Style
 
-- **pfg-hub (Kotlin):** Follow [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html). ktlint is enforced in CI.
+- **pfg-hub (TypeScript):** Keep controllers thin, preserve the OpenAPI contract, and run `npm run lint`.
 - **pfg-agent (Python):** Follow PEP 8. `ruff` is enforced in CI.
 
 ---

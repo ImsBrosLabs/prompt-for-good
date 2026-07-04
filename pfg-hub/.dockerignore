@@ -1,12 +1,11 @@
 .env
 *.env
-.gradle
 build
 out
+dist
+node_modules
+coverage
+*.tsbuildinfo
 .idea
 *.iml
-*.class
-*.jar
-*.war
-*.ear
 *.log
