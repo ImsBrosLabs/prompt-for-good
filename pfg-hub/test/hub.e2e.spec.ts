@@ -6,22 +6,28 @@ import {
 } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { AdminTokenGuard } from "../src/auth/admin-token.guard";
 import { GlobalExceptionFilter } from "../src/errors/global-exception.filter";
 import { GitHubService } from "../src/github/github.service";
 import { HealthController } from "../src/health/health.controller";
 import { IssuesController } from "../src/issues/issues.controller";
 import { IssuesService } from "../src/issues/issues.service";
+import { IssueDto, StatsResponseDto } from "../src/openapi/dtos";
+import { configureOpenApi } from "../src/openapi/swagger";
 import { RunnersController } from "../src/runners/runners.controller";
 import { RunnersService } from "../src/runners/runners.service";
 import { SeedController } from "../src/seed/seed.controller";
 import { StatsController } from "../src/stats/stats.controller";
 import { StatsService } from "../src/stats/stats.service";
-import { components } from "../src/types/openapi";
-
-type IssueDto = components["schemas"]["IssueDto"];
-type StatsResponse = components["schemas"]["StatsResponse"];
 
 const issueDto: IssueDto = {
   id: "issue-1",
@@ -40,7 +46,7 @@ const issueDto: IssueDto = {
   updatedAt: "2026-01-02T00:00:00.000Z",
 };
 
-const statsResponse: StatsResponse = {
+const statsResponse: StatsResponseDto = {
   totalRepos: 3,
   eligibleRepos: 2,
   totalIssues: 5,
@@ -119,6 +125,7 @@ describe("hub e2e", () => {
       new FastifyAdapter(),
     );
     app.useGlobalFilters(new GlobalExceptionFilter());
+    configureOpenApi(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });
@@ -159,6 +166,18 @@ describe("hub e2e", () => {
       .expect(200);
 
     expect(response.body).toEqual({ status: "UP" });
+  });
+
+  it("serves generated OpenAPI through Nest Swagger", async () => {
+    const response = await request(app.getHttpServer())
+      .get("/docs-json")
+      .expect(200);
+
+    expect(response.body.info.title).toBe("PFG Hub API");
+    expect(response.body.paths["/issues/next"]).toBeDefined();
+    expect(response.body.components.securitySchemes.RunnerToken.name).toBe(
+      "X-Runner-Token",
+    );
   });
 
   // Runner registration accepts the public request body and exposes only the

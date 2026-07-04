@@ -10,11 +10,9 @@ import { randomUUID } from "node:crypto";
 import { loadConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, Issue, issues, repos } from "../db/schema";
+import { DoneRequestDto, IssueDto } from "../openapi/dtos";
 import { RunnersService } from "../runners/runners.service";
-import { components } from "../types/openapi";
 
-type DoneRequest = components["schemas"]["DoneRequest"];
-type IssueDto = components["schemas"]["IssueDto"];
 type IssueWithRepo = Issue & { repoUrl: string };
 
 @Injectable()
@@ -70,7 +68,7 @@ export class IssuesService {
   async reportDone(
     id: string,
     runnerToken: string,
-    request: DoneRequest,
+    request: DoneRequestDto,
   ): Promise<void> {
     const runner = await this.runnersService.validateToken(runnerToken);
     const [issue] = await this.db

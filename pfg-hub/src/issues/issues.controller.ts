@@ -10,20 +10,42 @@ import {
   Post,
   Res,
 } from "@nestjs/common";
-import { components } from "../types/openapi";
+import {
+  ApiBody,
+  ApiHeader,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from "@nestjs/swagger";
+import { DoneRequestDto, IssueDto } from "../openapi/dtos";
 import { IssuesService } from "./issues.service";
 
-type DoneRequest = components["schemas"]["DoneRequest"];
-type IssueDto = components["schemas"]["IssueDto"];
 type HttpResponse = { status: (statusCode: number) => unknown };
 
 @Controller("issues")
+@ApiTags("Issues")
 export class IssuesController {
   constructor(
     @Inject(IssuesService) private readonly issuesService: IssuesService,
   ) {}
 
   @Get("next")
+  @ApiOperation({
+    summary: "Get the next pending issue",
+    description:
+      "Returns the highest-scored pending issue from the queue. Returns 204 when the queue is empty.",
+  })
+  @ApiSecurity("RunnerToken")
+  @ApiHeader({ name: "X-Runner-Token", required: true })
+  @ApiOkResponse({ description: "Next issue available", type: IssueDto })
+  @ApiNoContentResponse({ description: "No pending issue in the queue" })
+  @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
   async getNextIssue(
     @Headers("x-runner-token") runnerToken: string,
     @Res({ passthrough: true }) response: HttpResponse,
@@ -38,6 +60,24 @@ export class IssuesController {
 
   @Post(":id/claim")
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Claim an issue",
+    description:
+      "Marks the issue as CLAIMED by the calling runner and starts the work timer.",
+  })
+  @ApiSecurity("RunnerToken")
+  @ApiHeader({ name: "X-Runner-Token", required: true })
+  @ApiParam({ name: "id", description: "Issue UUID" })
+  @ApiOkResponse({
+    description: "Issue successfully claimed",
+    type: IssueDto,
+  })
+  @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
+  @ApiNotFoundResponse({ description: "Issue not found" })
+  @ApiResponse({
+    status: 409,
+    description: "Issue already claimed by another runner",
+  })
   async claimIssue(
     @Param("id") id: string,
     @Headers("x-runner-token") runnerToken: string,
@@ -47,10 +87,23 @@ export class IssuesController {
 
   @Post(":id/done")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: "Report issue completion",
+    description:
+      "Runner reports success or failure for a claimed issue. Failed issues may be retried up to the configured maximum (default: 3).",
+  })
+  @ApiSecurity("RunnerToken")
+  @ApiHeader({ name: "X-Runner-Token", required: true })
+  @ApiParam({ name: "id", description: "Issue UUID" })
+  @ApiBody({ type: DoneRequestDto })
+  @ApiNoContentResponse({ description: "Report accepted" })
+  @ApiResponse({ status: 400, description: "Invalid request body" })
+  @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
+  @ApiNotFoundResponse({ description: "Issue not found" })
   async reportDone(
     @Param("id") id: string,
     @Headers("x-runner-token") runnerToken: string,
-    @Body() request: DoneRequest,
+    @Body() request: DoneRequestDto,
   ): Promise<void> {
     await this.issuesService.reportDone(id, runnerToken, request);
   }

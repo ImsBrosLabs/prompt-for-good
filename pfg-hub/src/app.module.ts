@@ -3,7 +3,6 @@ import { DatabaseModule } from "./db/database.module";
 import { GitHubModule } from "./github/github.module";
 import { HealthController } from "./health/health.controller";
 import { IssuesModule } from "./issues/issues.module";
-import { OpenApiController } from "./openapi/openapi.controller";
 import { RunnersModule } from "./runners/runners.module";
 import { ScoringModule } from "./scoring/scoring.module";
 import { SeedModule } from "./seed/seed.module";
@@ -19,6 +18,6 @@ import { StatsModule } from "./stats/stats.module";
     GitHubModule,
     SeedModule,
   ],
-  controllers: [HealthController, OpenApiController],
+  controllers: [HealthController],
 })
 export class AppModule {}

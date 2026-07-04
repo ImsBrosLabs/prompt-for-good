@@ -2,15 +2,13 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, issues, repos, runners } from "../db/schema";
-import { components } from "../types/openapi";
-
-type StatsResponse = components["schemas"]["StatsResponse"];
+import { StatsResponseDto } from "../openapi/dtos";
 
 @Injectable()
 export class StatsService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  async getStats(): Promise<StatsResponse> {
+  async getStats(): Promise<StatsResponseDto> {
     const [
       totalRepos,
       eligibleRepos,
