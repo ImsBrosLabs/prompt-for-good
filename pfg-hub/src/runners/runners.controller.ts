@@ -4,6 +4,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
 } from "@nestjs/common";
@@ -16,7 +17,9 @@ type HeartbeatRequest = components["schemas"]["HeartbeatRequest"];
 
 @Controller("runners")
 export class RunnersController {
-  constructor(private readonly runnersService: RunnersService) {}
+  constructor(
+    @Inject(RunnersService) private readonly runnersService: RunnersService,
+  ) {}
 
   @Post("register")
   @HttpCode(HttpStatus.OK)

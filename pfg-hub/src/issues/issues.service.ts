@@ -21,6 +21,7 @@ type IssueWithRepo = Issue & { repoUrl: string };
 export class IssuesService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(RunnersService)
     private readonly runnersService: RunnersService,
   ) {}
 

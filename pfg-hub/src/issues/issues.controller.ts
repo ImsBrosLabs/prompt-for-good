@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   Post,
   Res,
@@ -18,7 +19,9 @@ type HttpResponse = { status: (statusCode: number) => unknown };
 
 @Controller("issues")
 export class IssuesController {
-  constructor(private readonly issuesService: IssuesService) {}
+  constructor(
+    @Inject(IssuesService) private readonly issuesService: IssuesService,
+  ) {}
 
   @Get("next")
   async getNextIssue(

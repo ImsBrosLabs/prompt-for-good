@@ -25,6 +25,7 @@ export class GitHubService {
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(ScoringService)
     private readonly scoringService: ScoringService,
   ) {}
 

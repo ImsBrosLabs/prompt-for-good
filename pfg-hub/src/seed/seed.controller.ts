@@ -2,6 +2,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Inject,
   Post,
   Query,
   UseGuards,
@@ -12,7 +13,9 @@ import { GitHubService } from "../github/github.service";
 @Controller("seed")
 @UseGuards(AdminTokenGuard)
 export class SeedController {
-  constructor(private readonly githubService: GitHubService) {}
+  constructor(
+    @Inject(GitHubService) private readonly githubService: GitHubService,
+  ) {}
 
   @Post("repo")
   @HttpCode(HttpStatus.OK)

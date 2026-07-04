@@ -81,18 +81,6 @@ describe("hub e2e", () => {
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = "test-admin-key";
-    Reflect.defineMetadata(
-      "design:paramtypes",
-      [IssuesService],
-      IssuesController,
-    );
-    Reflect.defineMetadata(
-      "design:paramtypes",
-      [RunnersService],
-      RunnersController,
-    );
-    Reflect.defineMetadata("design:paramtypes", [GitHubService], SeedController);
-    Reflect.defineMetadata("design:paramtypes", [StatsService], StatsController);
 
     runnersService = {
       register: vi.fn(),
