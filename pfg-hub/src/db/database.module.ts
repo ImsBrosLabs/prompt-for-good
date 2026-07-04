@@ -1,4 +1,5 @@
-import { Global, Module } from "@nestjs/common";
+import { Global, Inject, Injectable, Module } from "@nestjs/common";
+import type { OnApplicationShutdown } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { loadConfig } from "../config";
@@ -8,6 +9,15 @@ export const DATABASE = Symbol("DATABASE");
 export const PG_POOL = Symbol("PG_POOL");
 
 export type Database = ReturnType<typeof drizzle<typeof schema>>;
+
+@Injectable()
+class PgPoolLifecycle implements OnApplicationShutdown {
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.pool.end();
+  }
+}
 
 @Global()
 @Module({
@@ -22,6 +32,7 @@ export type Database = ReturnType<typeof drizzle<typeof schema>>;
       inject: [PG_POOL],
       useFactory: (pool: Pool) => drizzle(pool, { schema }),
     },
+    PgPoolLifecycle,
   ],
   exports: [DATABASE, PG_POOL],
 })
