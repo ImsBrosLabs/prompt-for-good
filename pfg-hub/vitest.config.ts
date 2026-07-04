@@ -7,6 +7,5 @@ export default defineConfig({
     include: ["test/**/*.spec.ts", "src/**/*.spec.ts"],
     pool: "forks",
     testTimeout: 30000,
-    hookTimeout: 60000,
   },
 });

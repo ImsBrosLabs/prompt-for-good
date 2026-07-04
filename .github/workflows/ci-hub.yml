@@ -56,12 +56,12 @@ jobs:
       - name: Migrate test database
         run: npm run db:migrate
         env:
-          DATABASE_URL: postgresql://pfg:pfg@localhost:5432/pfg_test
+          DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg_test
 
       - name: Test
         run: npm test
         env:
-          DATABASE_URL: postgresql://pfg:pfg@localhost:5432/pfg_test
+          DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg_test
           RUN_DB_TESTS: 'true'
           ADMIN_KEY: test-admin-key
           GITHUB_TOKEN: dummy
