@@ -151,6 +151,58 @@ pfg-runner (running on contributor machine)
 
 ---
 
+## pfg-hub TODOs
+
+The hub already has the core backend flow: runner registration, runner tokens,
+heartbeats, issue dispatch, atomic claiming, success/failure reporting with
+retries, contribution logging, stats, manual GitHub seeding, OpenAPI docs and
+unit/service tests. The remaining work is mainly about turning that backend MVP
+into a production/public hub.
+
+1. **Real GitHub ingestion**
+   - Move beyond manual repository seeding.
+   - Add the scheduled crawl described in the data flow: repository discovery,
+     pagination, recrawls, rate-limit handling, backoff and ingestion logs.
+   - Filter GitHub pull requests out of issue ingestion and handle paginated
+     issue responses.
+
+2. **Stronger scoring**
+   - Expand repository scoring beyond stars to include CI, tests and recent
+     activity.
+   - Expand issue scoring with scope estimation, difficulty tiers and stronger
+     solvability signals.
+   - Align the "FIFO" documentation with the current implementation, which
+     dispatches by `score desc, created_at asc`.
+
+3. **Queue robustness**
+   - Reclaim or fail stale `CLAIMED` issues after a timeout.
+   - Account for runner quota when dispatching work.
+   - Mark runners inactive when heartbeat freshness expires.
+   - Prevent duplicate GitHub issues across recrawls and repository records.
+
+4. **Runtime API validation**
+   - Add structured request validation for DTOs.
+   - Validate PR URLs, non-negative token counts, non-negative quota values and
+     required completion fields.
+
+5. **Production security**
+   - Replace static admin-token authentication with scoped bearer auth such as
+     JWT/OIDC.
+   - Add runner token rotation, revocation and hashed token storage.
+
+6. **Dashboard and missing API surface**
+   - Build the public hub dashboard for repositories, issues, pull requests,
+     contributors, runners and token usage.
+   - Add the documented `GET /repos` endpoint.
+
+7. **Operations and deployment**
+   - Add database readiness checks in addition to the process health endpoint.
+   - Add structured logs, metrics, strict production config validation and a
+     deployment path for `promptforgood.dev`.
+   - Keep full DB/API tests running in CI with `RUN_DB_TESTS=true`.
+
+---
+
 ## Future Considerations
 
 - **Embeddings-based context:** Use vector search over the codebase instead of grep for M2+
