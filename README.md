@@ -180,7 +180,6 @@ For `pfg-hub`, install Node.js 22+. You can still use Docker only for PostgreSQL
 cd pfg-hub
 docker compose up -d postgres
 npm install
-npm run generate:openapi-types
 npm run db:migrate
 npm run dev
 ```
@@ -226,7 +225,7 @@ workflow details.
 - **M2 — Code Intelligence:** smart context extraction (no wasted tokens)
 - **M3 — Full Contribution:** patch → verify → PR → report
 - **M4 — Distribution:** Docker runner, contributor onboarding in < 5 min
-- **M5 — Production:** public release, stats dashboard, `promptforgood.dev`
+- **M5 — Production:** public release, secure authentication, stats dashboard, `promptforgood.dev`
 
 ---
 

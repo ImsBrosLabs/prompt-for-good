@@ -146,7 +146,7 @@ pfg-runner (running on contributor machine)
 | Shallow clone | Minimize disk usage and clone time on contributor machines |
 | Bring-your-own API key | Contributors control their spending; no central API key risk |
 | Claude-first, plugin-friendly | Start with the best available model; allow OpenAI/Gemini later |
-| TypeScript for pfg-hub | Shared language for API/dashboard work; strong generated OpenAPI types; Drizzle keeps SQL mapping explicit |
+| TypeScript for pfg-hub | Shared language for API/dashboard work; Nest Swagger keeps the OpenAPI contract close to controllers; Drizzle keeps SQL mapping explicit |
 | Python for pfg-agent | Best LangChain / LLM tooling ecosystem |
 
 ---
@@ -157,4 +157,5 @@ pfg-runner (running on contributor machine)
 - **Language-specific build runners:** Detect language (Maven, Gradle, npm, pip, cargo) and adapt build commands
 - **Issue difficulty tiers:** Easy / Medium / Hard scoring for better runner-issue matching
 - **Multi-LLM support:** Plugin architecture to support OpenAI GPT-4o, Google Gemini
+- **Secure authentication:** Replace the static admin token with standard `Authorization: Bearer` auth, ideally backed by JWT/OIDC with scoped admin permissions
 - **pfg-hub dashboard:** Web UI for stats (repos, PRs, contributors, token usage)

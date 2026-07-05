@@ -1,16 +1,15 @@
 import {
   Body,
   Controller,
-  Headers,
   HttpCode,
   HttpStatus,
   Inject,
   Param,
   Post,
+  Req,
 } from "@nestjs/common";
 import {
   ApiBody,
-  ApiHeader,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -21,6 +20,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger";
+import { getHeader, RequestWithHeaders } from "../auth/request-headers";
 import {
   HeartbeatRequestDto,
   RegisterRequestDto,
@@ -66,7 +66,6 @@ export class RunnersController {
       "Signals the runner is alive and updates its remaining daily token quota. Must be called at least every 30 minutes to stay marked as active.",
   })
   @ApiSecurity("RunnerToken")
-  @ApiHeader({ name: "X-Runner-Token", required: true })
   @ApiParam({ name: "id", description: "Runner UUID" })
   @ApiBody({ type: HeartbeatRequestDto })
   @ApiNoContentResponse({ description: "Heartbeat recorded" })
@@ -74,13 +73,14 @@ export class RunnersController {
   @ApiNotFoundResponse({ description: "Runner not found" })
   async heartbeat(
     @Param("id") id: string,
-    @Headers("x-runner-token") runnerToken: string,
-    @Body() request: HeartbeatRequestDto,
+    @Req() request: RequestWithHeaders,
+    @Body() body: HeartbeatRequestDto,
   ): Promise<void> {
+    const runnerToken = getHeader(request, "x-runner-token");
     await this.runnersService.heartbeat(
       id,
       runnerToken,
-      request.quotaRemainingToday,
+      body.quotaRemainingToday,
     );
   }
 }

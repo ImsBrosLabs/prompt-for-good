@@ -13,7 +13,7 @@ x-hub-test-environment: &hub-test-environment
 
 x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
-  - hub_node_modules:/workspace/node_modules
+  - hub_node_modules- :/workspace/node_modules
 
 x-agent-environment: &agent-environment
   PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
@@ -65,7 +65,7 @@ services:
   hub:
     build:
       context: ./pfg-hub
-      dockerfile: Dockerfile.dev
+      dockerfile: *.dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,7 +86,7 @@ services:
     environment:
       <<: *hub-test-environment
     volumes: *hub-volumes
-    command: ["sh", "-c", "npm run db:migrate && npm test"]
+    command: ["sh", "-c", "npm install && npm run db:migrate && npm test"]
 
   hub-lint:
     build:
@@ -94,7 +94,7 @@ services:
       dockerfile: Dockerfile.dev
     profiles: ["test"]
     volumes: *hub-volumes
-    command: ["npm", "run", "lint"]
+    command: ["sh", "-c", "npm install && npm run lint"]
 
   agent:
     build:

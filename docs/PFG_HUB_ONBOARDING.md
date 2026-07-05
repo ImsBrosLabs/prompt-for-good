@@ -61,7 +61,8 @@ The most important files are:
 - `src/github/github.service.ts`: GitHub API calls, repo seeding, and issue crawling.
 - `src/scoring/scoring.service.ts`: repo and issue scoring rules.
 - `src/seed/seed.controller.ts`: admin-only endpoints that seed repositories.
-- `src/types/openapi.ts`: generated API types from the OpenAPI contract.
+- `src/openapi/dtos.ts`: API DTO classes used by controllers and Swagger docs.
+- `src/openapi/swagger.ts`: Nest Swagger/OpenAPI setup.
 
 ## Drizzle if you know TypeORM
 
@@ -182,32 +183,15 @@ the defaults from `src/config.ts`.
 
 ## API contract and DTOs
 
-The OpenAPI source is:
+The hub uses `@nestjs/swagger`. Public request/response shapes live in:
 
 ```text
-pfg-hub/src/main/resources/static/openapi.yml
+pfg-hub/src/openapi/dtos.ts
 ```
 
-Generated TypeScript types are stored in:
-
-```text
-pfg-hub/src/types/openapi.ts
-```
-
-Controllers use those generated types directly:
-
-```ts
-type IssueDto = components["schemas"]["IssueDto"];
-type DoneRequest = components["schemas"]["DoneRequest"];
-```
-
-So when changing public request or response shapes, update the OpenAPI file and
-regenerate types:
-
-```bash
-cd pfg-hub
-npm run generate:openapi-types
-```
+Controllers reference those DTO classes in method signatures and Swagger
+decorators. Runtime docs are generated at `/docs`, with raw specs at
+`/docs-json` and `/docs-yaml`.
 
 ## Main flows in code
 
@@ -357,7 +341,6 @@ Native setup:
 cd pfg-hub
 docker compose up -d postgres
 npm install
-npm run generate:openapi-types
 npm run db:migrate
 npm run dev
 ```

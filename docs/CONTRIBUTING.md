@@ -183,7 +183,6 @@ docker compose up -d postgres
 
 # Run the application
 npm install
-npm run generate:openapi-types
 npm run db:migrate
 npm run dev
 ```

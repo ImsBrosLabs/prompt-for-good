@@ -5,9 +5,12 @@ import {
   NestFastifyApplication,
 } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
+import { eq } from "drizzle-orm";
+import { Pool } from "pg";
 import request from "supertest";
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -15,110 +18,60 @@ import {
   it,
   vi,
 } from "vitest";
-import { AdminTokenGuard } from "../src/auth/admin-token.guard";
+import { AppModule } from "../src/app.module";
+import { DATABASE, Database, PG_POOL } from "../src/db/database.module";
+import {
+  contributions,
+  issues,
+  repos,
+  runners,
+} from "../src/db/schema";
+import type { IssueStatus } from "../src/db/schema";
 import { GlobalExceptionFilter } from "../src/errors/global-exception.filter";
-import { GitHubService } from "../src/github/github.service";
-import { HealthController } from "../src/health/health.controller";
-import { IssuesController } from "../src/issues/issues.controller";
-import { IssuesService } from "../src/issues/issues.service";
-import { IssueDto, StatsResponseDto } from "../src/openapi/dtos";
 import { configureOpenApi } from "../src/openapi/swagger";
-import { RunnersController } from "../src/runners/runners.controller";
-import { RunnersService } from "../src/runners/runners.service";
-import { SeedController } from "../src/seed/seed.controller";
-import { StatsController } from "../src/stats/stats.controller";
-import { StatsService } from "../src/stats/stats.service";
 
-const issueDto: IssueDto = {
-  id: "issue-1",
-  githubId: 42,
-  title: "Fix it",
-  body: "Expected actual reproduce",
-  githubUrl: "https://github.com/owner/repo/issues/42",
-  repoUrl: "https://github.com/owner/repo",
-  labels: "bug,good first issue",
-  score: 85,
-  status: "PENDING",
-  claimedBy: null,
-  claimedAt: null,
-  retryCount: 0,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-02T00:00:00.000Z",
+const runDbTests = process.env.RUN_DB_TESTS === "true";
+const describeDb = runDbTests ? describe : describe.skip;
+
+type RegisterResponse = {
+  runnerId: string;
+  token: string;
 };
 
-const statsResponse: StatsResponseDto = {
-  totalRepos: 3,
-  eligibleRepos: 2,
-  totalIssues: 5,
-  pendingIssues: 1,
-  claimedIssues: 1,
-  doneIssues: 2,
-  failedIssues: 1,
-  totalPrsOpened: 2,
-  activeRunners: 4,
+type SeedIssueInput = {
+  id: string;
+  githubId: number;
+  title?: string;
+  body?: string;
+  labels?: string;
+  score?: number;
+  status?: IssueStatus;
+  claimedBy?: string | null;
+  claimedAt?: Date | null;
+  retryCount?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
-type RunnersServiceMock = {
-  register: ReturnType<typeof vi.fn>;
-  heartbeat: ReturnType<typeof vi.fn>;
-};
+const adminToken = "test-admin-key";
 
-type IssuesServiceMock = {
-  getNextIssue: ReturnType<typeof vi.fn>;
-  claimIssue: ReturnType<typeof vi.fn>;
-  reportDone: ReturnType<typeof vi.fn>;
-};
-
-type StatsServiceMock = {
-  getStats: ReturnType<typeof vi.fn>;
-};
-
-type GitHubServiceMock = {
-  seedRepo: ReturnType<typeof vi.fn>;
-};
-
-describe("hub e2e", () => {
+describeDb("hub e2e", () => {
   let app: INestApplication;
-  let runnersService: RunnersServiceMock;
-  let issuesService: IssuesServiceMock;
-  let statsService: StatsServiceMock;
-  let githubService: GitHubServiceMock;
+  let db: Database;
+  let pool: Pool;
   const originalAdminKey = process.env.ADMIN_KEY;
+  const originalIssueMaxRetries = process.env.ISSUE_MAX_RETRIES;
+  const originalIssueMinScore = process.env.ISSUE_MIN_SCORE;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
 
   beforeAll(async () => {
-    process.env.ADMIN_KEY = "test-admin-key";
-
-    runnersService = {
-      register: vi.fn(),
-      heartbeat: vi.fn(),
-    };
-    issuesService = {
-      getNextIssue: vi.fn(),
-      claimIssue: vi.fn(),
-      reportDone: vi.fn(),
-    };
-    statsService = {
-      getStats: vi.fn(),
-    };
-    githubService = {
-      seedRepo: vi.fn(),
-    };
+    process.env.ADMIN_KEY = adminToken;
+    process.env.ISSUE_MAX_RETRIES = "3";
+    process.env.ISSUE_MIN_SCORE = "60";
+    process.env.GITHUB_TOKEN = "test-github-token";
 
     const moduleRef = await Test.createTestingModule({
-      controllers: [
-        HealthController,
-        IssuesController,
-        RunnersController,
-        SeedController,
-        StatsController,
-      ],
-      providers: [
-        AdminTokenGuard,
-        { provide: RunnersService, useValue: runnersService },
-        { provide: IssuesService, useValue: issuesService },
-        { provide: StatsService, useValue: statsService },
-        { provide: GitHubService, useValue: githubService },
-      ],
+      imports: [AppModule],
     }).compile();
 
     app = moduleRef.createNestApplication<NestFastifyApplication>(
@@ -128,38 +81,27 @@ describe("hub e2e", () => {
     configureOpenApi(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
+
+    db = app.get<Database>(DATABASE);
+    pool = app.get<Pool>(PG_POOL);
   });
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    runnersService.register.mockResolvedValue({
-      id: "runner-1",
-      token: "token-1",
-    });
-    runnersService.heartbeat.mockResolvedValue(undefined);
-    issuesService.getNextIssue.mockResolvedValue(issueDto);
-    issuesService.claimIssue.mockResolvedValue({
-      ...issueDto,
-      status: "CLAIMED",
-      claimedBy: "runner-1",
-      claimedAt: "2026-01-03T00:00:00.000Z",
-    });
-    issuesService.reportDone.mockResolvedValue(undefined);
-    statsService.getStats.mockResolvedValue(statsResponse);
-    githubService.seedRepo.mockResolvedValue(undefined);
+  beforeEach(async () => {
+    await truncateDb();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   afterAll(async () => {
-    if (originalAdminKey === undefined) {
-      delete process.env.ADMIN_KEY;
-    } else {
-      process.env.ADMIN_KEY = originalAdminKey;
-    }
+    restoreEnv("ADMIN_KEY", originalAdminKey);
+    restoreEnv("ISSUE_MAX_RETRIES", originalIssueMaxRetries);
+    restoreEnv("ISSUE_MIN_SCORE", originalIssueMinScore);
+    restoreEnv("GITHUB_TOKEN", originalGithubToken);
     await app?.close();
   });
 
-  // The health endpoint is the smallest full-stack smoke test: Nest routing,
-  // Fastify serialization, and the controller response all have to work.
   it("serves the health endpoint", async () => {
     const response = await request(app.getHttpServer())
       .get("/actuator/health")
@@ -168,142 +110,664 @@ describe("hub e2e", () => {
     expect(response.body).toEqual({ status: "UP" });
   });
 
-  it("serves generated OpenAPI through Nest Swagger", async () => {
+  it("serves generated OpenAPI with runner and admin security schemes", async () => {
     const response = await request(app.getHttpServer())
       .get("/docs-json")
       .expect(200);
 
     expect(response.body.info.title).toBe("PFG Hub API");
+    expect(response.body.paths["/actuator/health"]).toBeDefined();
+    expect(response.body.paths["/runners/register"]).toBeDefined();
+    expect(response.body.paths["/runners/{id}/heartbeat"]).toBeDefined();
     expect(response.body.paths["/issues/next"]).toBeDefined();
+    expect(response.body.paths["/issues/{id}/claim"]).toBeDefined();
+    expect(response.body.paths["/issues/{id}/done"]).toBeDefined();
+    expect(response.body.paths["/stats"]).toBeDefined();
+    expect(response.body.paths["/seed/default"]).toBeDefined();
+    expect(response.body.paths["/seed/repo"]).toBeDefined();
     expect(response.body.components.securitySchemes.RunnerToken.name).toBe(
       "X-Runner-Token",
     );
+    expect(response.body.components.securitySchemes.AdminToken.name).toBe(
+      "X-Admin-Token",
+    );
+    expect(response.body.paths["/issues/next"].get.security).toEqual([
+      { RunnerToken: [] },
+    ]);
+    expect(
+      response.body.paths["/runners/{id}/heartbeat"].post.security,
+    ).toEqual([{ RunnerToken: [] }]);
+    expect(response.body.paths["/issues/{id}/claim"].post.security).toEqual([
+      { RunnerToken: [] },
+    ]);
+    expect(response.body.paths["/issues/{id}/done"].post.security).toEqual([
+      { RunnerToken: [] },
+    ]);
+    expect(response.body.paths["/seed/default"].post.security).toEqual([
+      { AdminToken: [] },
+    ]);
+    expect(response.body.paths["/seed/repo"].post.security).toEqual([
+      { AdminToken: [] },
+    ]);
   });
 
-  // Runner registration accepts the public request body and exposes only the
-  // credentials the agent needs, not the full internal runner record.
-  it("registers a runner through the HTTP API", async () => {
+  it("registers a runner through the HTTP API and persists only trimmed public input", async () => {
     const response = await request(app.getHttpServer())
       .post("/runners/register")
-      .send({ contributorName: "octocat" })
+      .send({ contributorName: "  octocat  " })
       .expect(200);
 
-    expect(runnersService.register).toHaveBeenCalledWith("octocat");
-    expect(response.body).toEqual({ runnerId: "runner-1", token: "token-1" });
+    expect(Object.keys(response.body).sort()).toEqual(["runnerId", "token"]);
+    expect(response.body.runnerId).toEqual(expect.any(String));
+    expect(response.body.token).toEqual(expect.any(String));
+
+    const [runner] = await db
+      .select()
+      .from(runners)
+      .where(eq(runners.id, response.body.runnerId))
+      .limit(1);
+    expect(runner).toMatchObject({
+      id: response.body.runnerId,
+      token: response.body.token,
+      contributorName: "octocat",
+      quotaRemainingToday: 0,
+      active: true,
+    });
   });
 
-  // Heartbeats must read the runner id from the URL, the token from the header,
-  // and the quota from the body before returning an empty 204 response.
-  it("records runner heartbeats through the HTTP API", async () => {
+  it("rejects missing or blank contributor names without creating a runner", async () => {
     await request(app.getHttpServer())
-      .post("/runners/runner-1/heartbeat")
-      .set("X-Runner-Token", "token-1")
+      .post("/runners/register")
+      .send({})
+      .expect(400);
+
+    const blankResponse = await request(app.getHttpServer())
+      .post("/runners/register")
+      .send({ contributorName: "   " })
+      .expect(400);
+
+    expect(blankResponse.body).toEqual({
+      error: "Missing or invalid contributor name",
+    });
+    expect(await countRows("runners")).toBe(0);
+  });
+
+  it("records runner heartbeats and persists quota, last seen and active state", async () => {
+    const runner = await registerRunner();
+
+    await db
+      .update(runners)
+      .set({ active: false, lastSeenAt: null })
+      .where(eq(runners.id, runner.runnerId));
+
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .set("X-Runner-Token", runner.token)
       .send({ quotaRemainingToday: 250 })
       .expect(204);
 
-    expect(runnersService.heartbeat).toHaveBeenCalledWith(
-      "runner-1",
-      "token-1",
-      250,
-    );
+    const [updated] = await db
+      .select()
+      .from(runners)
+      .where(eq(runners.id, runner.runnerId))
+      .limit(1);
+    expect(updated.quotaRemainingToday).toBe(250);
+    expect(updated.lastSeenAt).toBeInstanceOf(Date);
+    expect(updated.active).toBe(true);
   });
 
-  // Fetching the next issue forwards the runner token and returns the service
-  // DTO unchanged when work is available.
-  it("returns the next available issue through the HTTP API", async () => {
-    const response = await request(app.getHttpServer())
-      .get("/issues/next")
-      .set("X-Runner-Token", "token-1")
-      .expect(200);
+  it("rejects runner heartbeats with missing, invalid or unknown runner credentials", async () => {
+    const runner = await registerRunner();
 
-    expect(issuesService.getNextIssue).toHaveBeenCalledWith("token-1");
-    expect(response.body).toEqual(issueDto);
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .send({ quotaRemainingToday: 250 })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .set("X-Runner-Token", "wrong-token")
+      .send({ quotaRemainingToday: 250 })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post("/runners/missing-runner/heartbeat")
+      .set("X-Runner-Token", runner.token)
+      .send({ quotaRemainingToday: 250 })
+      .expect(404);
   });
 
-  // When the service says the queue is empty, the controller must translate
-  // that null into a 204 with no response body.
-  it("returns 204 when no issue is available", async () => {
-    issuesService.getNextIssue.mockResolvedValueOnce(null);
+  it("returns 204 with an empty body when the queue is empty", async () => {
+    const runner = await registerRunner();
 
     const response = await request(app.getHttpServer())
       .get("/issues/next")
-      .set("X-Runner-Token", "token-1")
+      .set("X-Runner-Token", runner.token)
       .expect(204);
 
     expect(response.text).toBe("");
   });
 
-  // Claiming an issue uses both path and header parameters and returns the
-  // claimed issue DTO to the runner.
-  it("claims an issue through the HTTP API", async () => {
+  it("dispatches the highest scored pending issue and ignores unavailable work", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "low-score",
+      githubId: 1,
+      score: 50,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await seedIssue({
+      id: "newer-high-score",
+      githubId: 2,
+      score: 90,
+      createdAt: new Date("2026-01-02T00:00:00Z"),
+    });
+    await seedIssue({
+      id: "older-high-score",
+      githubId: 3,
+      score: 90,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    await seedIssue({
+      id: "claimed-higher-score",
+      githubId: 4,
+      score: 100,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+    });
+    await seedIssue({
+      id: "done-higher-score",
+      githubId: 5,
+      score: 100,
+      status: "DONE",
+    });
+    await seedIssue({
+      id: "failed-higher-score",
+      githubId: 6,
+      score: 100,
+      status: "FAILED",
+    });
+
     const response = await request(app.getHttpServer())
-      .post("/issues/issue-1/claim")
-      .set("X-Runner-Token", "token-1")
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
       .expect(200);
 
-    expect(issuesService.claimIssue).toHaveBeenCalledWith("issue-1", "token-1");
     expect(response.body).toMatchObject({
-      id: "issue-1",
-      status: "CLAIMED",
-      claimedBy: "runner-1",
+      id: "older-high-score",
+      githubId: 3,
+      repoUrl: "https://github.com/owner/repo",
+      score: 90,
+      status: "PENDING",
     });
   });
 
-  // Reporting completion must pass the request body through to the service and
-  // respond with 204 so agents know there is no payload to parse.
-  it("reports issue completion through the HTTP API", async () => {
-    const requestBody = {
-      success: true,
-      prUrl: "https://github.com/owner/repo/pull/7",
-      tokensUsed: 123,
-    };
+  it("claims a pending issue and persists ownership metadata", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({ id: "issue-1", githubId: 42 });
+
+    const response = await request(app.getHttpServer())
+      .post("/issues/issue-1/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      id: "issue-1",
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+    });
+    expect(response.body.claimedAt).toEqual(expect.any(String));
+
+    const [claimed] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "issue-1"))
+      .limit(1);
+    expect(claimed.status).toBe("CLAIMED");
+    expect(claimed.claimedBy).toBe(runner.runnerId);
+    expect(claimed.claimedAt).toBeInstanceOf(Date);
+  });
+
+  it("rejects claim requests for unavailable, missing or unauthorized issues", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "already-claimed",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+    });
+    await seedIssue({
+      id: "already-done",
+      githubId: 43,
+      status: "DONE",
+    });
+
+    await request(app.getHttpServer())
+      .post("/issues/already-claimed/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .post("/issues/already-done/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .post("/issues/missing-issue/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post("/issues/already-claimed/claim")
+      .set("X-Runner-Token", "wrong-token")
+      .expect(401);
+  });
+
+  it("records successful issue completion and creates a success contribution", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({ id: "issue-1", githubId: 42 });
+
+    const next = await request(app.getHttpServer())
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
+      .expect(200);
+    expect(next.body.id).toBe("issue-1");
+
+    await request(app.getHttpServer())
+      .post("/issues/issue-1/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(200);
 
     await request(app.getHttpServer())
       .post("/issues/issue-1/done")
-      .set("X-Runner-Token", "token-1")
-      .send(requestBody)
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: true,
+        prUrl: "https://github.com/owner/repo/pull/7",
+        tokensUsed: 123,
+      })
       .expect(204);
 
-    expect(issuesService.reportDone).toHaveBeenCalledWith(
-      "issue-1",
-      "token-1",
-      requestBody,
-    );
+    const [done] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "issue-1"))
+      .limit(1);
+    expect(done.status).toBe("DONE");
+    expect(done.retryCount).toBe(0);
+
+    const [contribution] = await db.select().from(contributions).limit(1);
+    expect(contribution).toMatchObject({
+      issueId: "issue-1",
+      runnerId: runner.runnerId,
+      prUrl: "https://github.com/owner/repo/pull/7",
+      status: "SUCCESS",
+      tokensUsed: 123,
+      errorMessage: null,
+    });
   });
 
-  // The stats endpoint exposes the aggregate hub counters as a direct JSON
-  // response for dashboards and monitoring.
-  it("serves hub stats through the HTTP API", async () => {
+  it("returns a failed issue to pending while retry budget remains", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "retryable-issue",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      retryCount: 1,
+    });
+
+    await request(app.getHttpServer())
+      .post("/issues/retryable-issue/done")
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: false,
+        tokensUsed: 456,
+        errorMessage: "Tests failed",
+      })
+      .expect(204);
+
+    const [issue] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "retryable-issue"))
+      .limit(1);
+    expect(issue.status).toBe("PENDING");
+    expect(issue.retryCount).toBe(2);
+
+    const [contribution] = await db.select().from(contributions).limit(1);
+    expect(contribution).toMatchObject({
+      issueId: "retryable-issue",
+      runnerId: runner.runnerId,
+      status: "FAILED",
+      tokensUsed: 456,
+      errorMessage: "Tests failed",
+    });
+  });
+
+  it("marks a failed issue as final when the retry limit is reached", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "final-failure",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      retryCount: 2,
+    });
+
+    await request(app.getHttpServer())
+      .post("/issues/final-failure/done")
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: false,
+        errorMessage: "Still failing",
+      })
+      .expect(204);
+
+    const [issue] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "final-failure"))
+      .limit(1);
+    expect(issue.status).toBe("FAILED");
+    expect(issue.retryCount).toBe(3);
+
+    const [contribution] = await db.select().from(contributions).limit(1);
+    expect(contribution).toMatchObject({
+      issueId: "final-failure",
+      runnerId: runner.runnerId,
+      status: "FAILED",
+      errorMessage: "Still failing",
+    });
+  });
+
+  it("prevents another runner from completing a claimed issue", async () => {
+    const owner = await registerRunner("owner");
+    const intruder = await registerRunner("intruder");
+    await seedRepo();
+    await seedIssue({
+      id: "claimed-by-owner",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: owner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+    });
+
+    await request(app.getHttpServer())
+      .post("/issues/claimed-by-owner/done")
+      .set("X-Runner-Token", intruder.token)
+      .send({ success: true })
+      .expect(401);
+
+    const [issue] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "claimed-by-owner"))
+      .limit(1);
+    expect(issue.status).toBe("CLAIMED");
+    expect(issue.claimedBy).toBe(owner.runnerId);
+    expect(await countRows("contributions")).toBe(0);
+  });
+
+  it("serves hub stats from persisted repos, issues, runners and contributions", async () => {
+    const activeRunner = await registerRunner("active");
+    const inactiveRunner = await registerRunner("inactive");
+    await db
+      .update(runners)
+      .set({ active: false })
+      .where(eq(runners.id, inactiveRunner.runnerId));
+
+    await seedRepo({
+      id: "repo-1",
+      githubUrl: "https://github.com/owner/eligible",
+      owner: "owner",
+      name: "eligible",
+      eligible: true,
+    });
+    await seedRepo({
+      id: "ineligible-repo",
+      githubUrl: "https://github.com/owner/ineligible",
+      owner: "owner",
+      name: "ineligible",
+      eligible: false,
+    });
+    await seedIssue({ id: "pending", githubId: 1, status: "PENDING" });
+    await seedIssue({
+      id: "claimed",
+      githubId: 2,
+      status: "CLAIMED",
+      claimedBy: activeRunner.runnerId,
+      claimedAt: new Date("2026-01-03T00:00:00Z"),
+    });
+    await seedIssue({ id: "done", githubId: 3, status: "DONE" });
+    await seedIssue({ id: "failed", githubId: 4, status: "FAILED" });
+    await db.insert(contributions).values([
+      {
+        id: "contribution-1",
+        issueId: "done",
+        runnerId: activeRunner.runnerId,
+        prUrl: "https://github.com/owner/repo/pull/1",
+        status: "SUCCESS",
+      },
+      {
+        id: "contribution-2",
+        issueId: "failed",
+        runnerId: activeRunner.runnerId,
+        status: "FAILED",
+        errorMessage: "Failed",
+      },
+    ]);
+
     const response = await request(app.getHttpServer())
       .get("/stats")
       .expect(200);
 
-    expect(statsService.getStats).toHaveBeenCalledOnce();
-    expect(response.body).toEqual(statsResponse);
-  });
-
-  // Seed endpoints are protected at the HTTP layer, so missing admin headers
-  // should be rejected before the GitHub service is called.
-  it("rejects seed requests without the admin token", async () => {
-    const response = await request(app.getHttpServer())
-      .post("/seed/default")
-      .expect(401);
-
     expect(response.body).toEqual({
-      error: "Invalid or missing X-Admin-Token",
+      totalRepos: 2,
+      eligibleRepos: 1,
+      totalIssues: 4,
+      pendingIssues: 1,
+      claimedIssues: 1,
+      doneIssues: 1,
+      failedIssues: 1,
+      totalPrsOpened: 2,
+      activeRunners: 1,
     });
-    expect(githubService.seedRepo).not.toHaveBeenCalled();
   });
 
-  // Authorized seed requests forward the owner/name query parameters to the
-  // GitHub seeding service.
-  it("seeds a requested repository with the admin token", async () => {
+  it("protects seed endpoints with the admin token before any GitHub call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request(app.getHttpServer()).post("/seed/default").expect(401);
+    await request(app.getHttpServer())
+      .post("/seed/default")
+      .set("X-Admin-Token", "wrong-admin-token")
+      .expect(401);
     await request(app.getHttpServer())
       .post("/seed/repo")
-      .set("X-Admin-Token", "test-admin-key")
       .query({ owner: "nodejs", name: "node" })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post("/seed/repo")
+      .set("X-Admin-Token", "wrong-admin-token")
+      .query({ owner: "nodejs", name: "node" })
+      .expect(401);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await countRows("repos")).toBe(0);
+    expect(await countRows("issues")).toBe(0);
+  });
+
+  it("seeds a repository through the real GitHub service with GitHub HTTP mocked", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL | Request): Promise<Response> => {
+        const requestUrl = String(url);
+
+        if (requestUrl.endsWith("/repos/acme/project")) {
+          return jsonResponse({
+            stargazers_count: 100,
+            language: "TypeScript",
+          });
+        }
+
+        if (
+          requestUrl.endsWith(
+            "/repos/acme/project/issues?state=open&labels=bug,good%20first%20issue,help%20wanted",
+          )
+        ) {
+          return jsonResponse([
+            {
+              id: 1001,
+              title: "Qualified bug",
+              body: "Expected actual reproduce ".repeat(20),
+              html_url: "https://github.com/acme/project/issues/1",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+            },
+            {
+              id: 1002,
+              title: "Too vague",
+              body: "Needs work",
+              html_url: "https://github.com/acme/project/issues/2",
+              labels: [{ name: "question" }],
+            },
+          ]);
+        }
+
+        return jsonResponse({ message: "not found" }, false);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request(app.getHttpServer())
+      .post("/seed/repo")
+      .set("X-Admin-Token", adminToken)
+      .query({ owner: "acme", name: "project" })
       .expect(200);
 
-    expect(githubService.seedRepo).toHaveBeenCalledWith("nodejs", "node");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const [repo] = await db
+      .select()
+      .from(repos)
+      .where(eq(repos.githubUrl, "https://github.com/acme/project"))
+      .limit(1);
+    expect(repo).toMatchObject({
+      owner: "acme",
+      name: "project",
+      language: "TypeScript",
+      stars: 100,
+      eligible: true,
+    });
+    expect(repo.lastCrawledAt).toBeInstanceOf(Date);
+
+    const seededIssues = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.repoId, repo.id));
+    expect(seededIssues).toHaveLength(1);
+    expect(seededIssues[0]).toMatchObject({
+      githubId: 1001,
+      title: "Qualified bug",
+      githubUrl: "https://github.com/acme/project/issues/1",
+      labels: "bug,good first issue,help wanted",
+      score: 85,
+      status: "PENDING",
+    });
   });
+
+  async function registerRunner(
+    contributorName = "octocat",
+  ): Promise<RegisterResponse> {
+    const response = await request(app.getHttpServer())
+      .post("/runners/register")
+      .send({ contributorName })
+      .expect(200);
+    return response.body as RegisterResponse;
+  }
+
+  async function seedRepo(
+    values: {
+      id?: string;
+      githubUrl?: string;
+      owner?: string;
+      name?: string;
+      stars?: number;
+      eligible?: boolean;
+    } = {},
+  ): Promise<void> {
+    await db.insert(repos).values({
+      id: values.id ?? "repo-1",
+      githubUrl: values.githubUrl ?? "https://github.com/owner/repo",
+      owner: values.owner ?? "owner",
+      name: values.name ?? "repo",
+      stars: values.stars ?? 100,
+      eligible: values.eligible ?? true,
+    });
+  }
+
+  async function seedIssue(input: SeedIssueInput): Promise<void> {
+    const createdAt = input.createdAt ?? new Date("2026-01-01T00:00:00Z");
+    await db.insert(issues).values({
+      id: input.id,
+      repoId: "repo-1",
+      githubId: input.githubId,
+      title: input.title ?? "Fix it",
+      body: input.body ?? "Expected actual reproduce ".repeat(20),
+      githubUrl: `https://github.com/owner/repo/issues/${input.githubId}`,
+      labels: input.labels ?? "bug,good first issue,help wanted",
+      score: input.score ?? 85,
+      status: input.status ?? "PENDING",
+      claimedBy: input.claimedBy ?? null,
+      claimedAt: input.claimedAt ?? null,
+      retryCount: input.retryCount ?? 0,
+      createdAt,
+      updatedAt: input.updatedAt ?? createdAt,
+    });
+  }
+
+  async function truncateDb(): Promise<void> {
+    await pool.query(
+      "TRUNCATE contributions, issues, runners, repos RESTART IDENTITY CASCADE",
+    );
+  }
+
+  async function countRows(
+    table: "contributions" | "issues" | "repos" | "runners",
+  ): Promise<number> {
+    const result = await pool.query<{ count: string }>(
+      `SELECT count(*)::int FROM ${table}`,
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
+function jsonResponse(body: unknown, ok = true): Response {
+  return {
+    ok,
+    json: async () => body,
+  } as Response;
+}

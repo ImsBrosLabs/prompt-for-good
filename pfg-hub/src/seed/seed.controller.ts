@@ -8,7 +8,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
-  ApiHeader,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -23,7 +22,6 @@ import { GitHubService } from "../github/github.service";
 @UseGuards(AdminTokenGuard)
 @ApiTags("Seed")
 @ApiSecurity("AdminToken")
-@ApiHeader({ name: "X-Admin-Token", required: true })
 export class SeedController {
   constructor(
     @Inject(GitHubService) private readonly githubService: GitHubService,
