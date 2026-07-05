@@ -13,7 +13,7 @@ x-hub-test-environment: &hub-test-environment
 
 x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
-  - hub_node_modules- :/workspace/node_modules
+  - hub_node_modules:/workspace/node_modules
 
 x-agent-environment: &agent-environment
   PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
@@ -65,7 +65,7 @@ services:
   hub:
     build:
       context: ./pfg-hub
-      dockerfile: *.dev
+      dockerfile: Dockerfile.dev
     depends_on:
       postgres:
         condition: service_healthy
