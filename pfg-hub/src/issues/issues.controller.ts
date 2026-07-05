@@ -45,6 +45,7 @@ export class IssuesController {
   @ApiOkResponse({ description: "Next issue available", type: IssueDto })
   @ApiNoContentResponse({ description: "No pending issue in the queue" })
   @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
+  /** Serves the next issue or returns 204 when the queue has no work. */
   async getNextIssue(
     @Req() request: RequestWithHeaders,
     @Res({ passthrough: true }) response: HttpResponse,
@@ -77,6 +78,7 @@ export class IssuesController {
     status: 409,
     description: "Issue already claimed by another runner",
   })
+  /** Lets a runner claim a specific pending issue before starting work. */
   async claimIssue(
     @Param("id") id: string,
     @Req() request: RequestWithHeaders,
@@ -99,6 +101,7 @@ export class IssuesController {
   @ApiResponse({ status: 400, description: "Invalid request body" })
   @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
   @ApiNotFoundResponse({ description: "Issue not found" })
+  /** Accepts a runner's success/failure report for a claimed issue. */
   async reportDone(
     @Param("id") id: string,
     @Req() request: RequestWithHeaders,

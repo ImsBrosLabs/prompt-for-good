@@ -8,6 +8,7 @@ import { StatsResponseDto } from "../openapi/dtos";
 export class StatsService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
+  /** Aggregates the counters displayed by the public stats endpoint. */
   async getStats(): Promise<StatsResponseDto> {
     const [
       totalRepos,
@@ -44,6 +45,7 @@ export class StatsService {
     };
   }
 
+  /** Counts rows from a known table, optionally applying a Drizzle predicate. */
   private async count(
     table: typeof repos | typeof issues | typeof contributions | typeof runners,
     where?: ReturnType<typeof eq>,

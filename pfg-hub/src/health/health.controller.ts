@@ -8,6 +8,7 @@ export class HealthController {
   @Get("health")
   @ApiOperation({ summary: "Get service health" })
   @ApiOkResponse({ type: HealthResponseDto })
+  /** Reports whether the hub process is reachable. */
   health() {
     return { status: "UP" };
   }

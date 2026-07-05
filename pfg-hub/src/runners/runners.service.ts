@@ -14,6 +14,7 @@ import { Runner, runners } from "../db/schema";
 export class RunnersService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
+  /** Creates a runner identity and its long-lived authentication token. */
   async register(contributorName: string): Promise<Runner> {
     if (!contributorName?.trim()) {
       throw new BadRequestException("Missing or invalid contributor name");
@@ -32,6 +33,7 @@ export class RunnersService {
     return runner;
   }
 
+  /** Records liveness and remaining quota for an existing authenticated runner. */
   async heartbeat(
     id: string,
     token: string,
@@ -56,6 +58,7 @@ export class RunnersService {
       .where(eq(runners.id, id));
   }
 
+  /** Resolves a runner token to its runner or rejects the request. */
   async validateToken(token: string): Promise<Runner> {
     if (!token) throw new UnauthorizedException("Invalid runner token");
 

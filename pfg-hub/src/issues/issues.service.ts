@@ -23,6 +23,7 @@ export class IssuesService {
     private readonly runnersService: RunnersService,
   ) {}
 
+  /** Returns the highest-priority pending issue available to a valid runner. */
   async getNextIssue(runnerToken: string): Promise<IssueDto | null> {
     await this.runnersService.validateToken(runnerToken);
 
@@ -37,6 +38,7 @@ export class IssuesService {
     return row ? this.toDto({ ...row.issue, repoUrl: row.repoUrl }) : null;
   }
 
+  /** Atomically assigns a pending issue to the authenticated runner. */
   async claimIssue(id: string, runnerToken: string): Promise<IssueDto> {
     const runner = await this.runnersService.validateToken(runnerToken);
     const now = new Date();
@@ -65,6 +67,7 @@ export class IssuesService {
     return this.getIssueDtoById(claimed.id);
   }
 
+  /** Records runner completion, retry state and the contribution audit row. */
   async reportDone(
     id: string,
     runnerToken: string,
@@ -113,6 +116,7 @@ export class IssuesService {
     });
   }
 
+  /** Reloads an issue with repository context before returning it to clients. */
   private async getIssueDtoById(id: string): Promise<IssueDto> {
     const [row] = await this.db
       .select({ issue: issues, repoUrl: repos.githubUrl })
@@ -125,6 +129,7 @@ export class IssuesService {
     return this.toDto({ ...row.issue, repoUrl: row.repoUrl });
   }
 
+  /** Converts database issue rows into the public API representation. */
   private toDto(issue: IssueWithRepo): IssueDto {
     return {
       id: issue.id,

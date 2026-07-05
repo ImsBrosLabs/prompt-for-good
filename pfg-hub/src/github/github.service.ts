@@ -29,6 +29,7 @@ export class GitHubService {
     private readonly scoringService: ScoringService,
   ) {}
 
+  /** Imports a GitHub repository once and crawls it when it passes eligibility. */
   async seedRepo(owner: string, name: string): Promise<void> {
     const githubUrl = `https://github.com/${owner}/${name}`;
     const [existing] = await this.db
@@ -62,6 +63,7 @@ export class GitHubService {
     }
   }
 
+  /** Fetches open GitHub issues for a repository and stores qualifying ones. */
   async crawlRepo(repoId: string): Promise<void> {
     const [repo] = await this.db
       .select()
@@ -115,6 +117,7 @@ export class GitHubService {
       .where(eq(repos.id, repo.id));
   }
 
+  /** Performs an authenticated GitHub API request and returns typed JSON. */
   private async githubRequest<T>(path: string): Promise<T> {
     const response = await fetch(`${this.apiBaseUrl}${path}`, {
       headers: {

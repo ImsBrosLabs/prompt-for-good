@@ -14,6 +14,7 @@ export type Database = ReturnType<typeof drizzle<typeof schema>>;
 class PgPoolLifecycle implements OnApplicationShutdown {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
+  /** Closes the shared PostgreSQL connection pool during Nest shutdown. */
   async onApplicationShutdown(): Promise<void> {
     await this.pool.end();
   }
@@ -24,12 +25,14 @@ class PgPoolLifecycle implements OnApplicationShutdown {
   providers: [
     {
       provide: PG_POOL,
+      // Creates the PostgreSQL pool used by all database providers.
       useFactory: () =>
         new Pool({ connectionString: loadConfig().databaseUrl }),
     },
     {
       provide: DATABASE,
       inject: [PG_POOL],
+      // Wraps the PostgreSQL pool in a typed Drizzle client.
       useFactory: (pool: Pool) => drizzle(pool, { schema }),
     },
     PgPoolLifecycle,

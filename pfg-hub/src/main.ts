@@ -9,6 +9,7 @@ import { loadConfig } from "./config";
 import { GlobalExceptionFilter } from "./errors/global-exception.filter";
 import { configureOpenApi } from "./openapi/swagger";
 
+/** Builds the Nest/Fastify application and starts the HTTP server. */
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,

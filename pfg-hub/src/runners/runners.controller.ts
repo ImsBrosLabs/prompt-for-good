@@ -51,6 +51,7 @@ export class RunnersController {
     status: 400,
     description: "Missing or invalid contributor name",
   })
+  /** Handles runner registration and returns credentials for future calls. */
   async registerRunner(
     @Body() request: RegisterRequestDto,
   ): Promise<RegisterResponseDto> {
@@ -71,6 +72,7 @@ export class RunnersController {
   @ApiNoContentResponse({ description: "Heartbeat recorded" })
   @ApiUnauthorizedResponse({ description: "Invalid or missing runner token" })
   @ApiNotFoundResponse({ description: "Runner not found" })
+  /** Accepts runner heartbeat updates authenticated by X-Runner-Token. */
   async heartbeat(
     @Param("id") id: string,
     @Req() request: RequestWithHeaders,

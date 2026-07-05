@@ -15,6 +15,7 @@ type HttpReply = {
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
+  /** Converts thrown values into a consistent JSON error response. */
   catch(exception: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<HttpReply>();
     const httpException = this.toHttpException(exception);
@@ -31,6 +32,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     });
   }
 
+  /** Maps known domain and framework errors to Nest HTTP exceptions. */
   private toHttpException(exception: unknown): HttpException {
     if (exception instanceof HttpException) return exception;
     if (exception instanceof DomainError)

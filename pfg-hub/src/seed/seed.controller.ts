@@ -53,6 +53,7 @@ export class SeedController {
     status: 502,
     description: "GitHub API unreachable or rate-limited",
   })
+  /** Seeds one requested repository into the issue queue. */
   async seedRepo(
     @Query("owner") owner: string,
     @Query("name") name: string,
@@ -69,6 +70,7 @@ export class SeedController {
   })
   @ApiOkResponse({ description: "Default repositories seeded successfully" })
   @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  /** Seeds the curated default repository list used for local/demo data. */
   async seedDefault(): Promise<void> {
     await this.githubService.seedRepo("nodejs", "node");
     await this.githubService.seedRepo("psf", "requests");

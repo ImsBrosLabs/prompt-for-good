@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 
+/** Registers Swagger UI and the generated OpenAPI JSON/YAML endpoints. */
 export function configureOpenApi(app: INestApplication): void {
   const openApiConfig = new DocumentBuilder()
     .setTitle("PFG Hub API")

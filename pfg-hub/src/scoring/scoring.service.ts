@@ -3,6 +3,7 @@ import { Issue, Repo } from "../db/schema";
 
 @Injectable()
 export class ScoringService {
+  /** Scores an issue according to labels and body quality signals. */
   scoreIssue(issue: Pick<Issue, "labels" | "body">): number {
     let score = 0;
     const labels = (issue.labels ?? "").toLowerCase();
@@ -30,6 +31,7 @@ export class ScoringService {
     return Math.max(0, Math.min(score, 100));
   }
 
+  /** Determines whether a repository is popular enough to enter the queue. */
   isRepoEligible(repo: Pick<Repo, "stars">): boolean {
     return repo.stars >= 50;
   }

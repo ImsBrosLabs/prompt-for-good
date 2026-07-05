@@ -20,6 +20,7 @@ export class StatsController {
     description: "Current platform statistics",
     type: StatsResponseDto,
   })
+  /** Returns current platform-wide repository, issue and runner counters. */
   async getStats(): Promise<StatsResponseDto> {
     return this.statsService.getStats();
   }

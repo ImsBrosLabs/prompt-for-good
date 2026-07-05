@@ -7,6 +7,7 @@ export type AppConfig = {
   issueMinScore: number;
 };
 
+/** Reads runtime settings from the environment and applies local defaults. */
 export function loadConfig(): AppConfig {
   return {
     port: Number(process.env.PORT ?? 8080),
