@@ -172,6 +172,14 @@ GITHUB_TOKEN
 ADMIN_KEY
 ISSUE_MAX_RETRIES
 ISSUE_MIN_SCORE
+GITHUB_INGESTION_ENABLED
+GITHUB_INGESTION_CRON
+GITHUB_RECRAWL_AFTER_MS
+GITHUB_MAX_RETRIES
+GITHUB_BACKOFF_BASE_MS
+GITHUB_DISCOVERY_MAX_PAGES_PER_LABEL
+GITHUB_DISCOVERY_MAX_REPOSITORIES
+GITHUB_MIN_RATE_LIMIT_REMAINING
 ```
 
 When running with the root Docker Compose file, these values are injected by the
@@ -325,7 +333,7 @@ The API is available at:
 
 ```text
 http://localhost:8080
-http://localhost:8080/swagger-ui.html
+http://localhost:8080/docs
 ```
 
 Run hub checks:

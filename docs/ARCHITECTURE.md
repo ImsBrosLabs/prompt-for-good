@@ -19,21 +19,24 @@ The central server. Hosts the pre-qualified issue queue and coordinates runners.
 
 **REST API:**
 ```
-GET  /repos                    → list of qualified repositories
 GET  /issues/next              → next available issue matching runner criteria
 POST /issues/{id}/claim        → runner claims an issue
 POST /issues/{id}/done         → runner reports PR opened or failure
-POST /runners/register         → register a new runner and initial preferences
-POST /runners/{id}/heartbeat   → runner signals it is alive and may refresh preferences
+POST /runners/register         → register a new runner
+POST /runners/{id}/heartbeat   → runner signals it is alive
+POST /seed/repo                → admin seeds a single GitHub repository
+POST /seed/default             → admin seeds the default demo repository
+POST /seed/discover            → admin runs GitHub repository discovery
 GET  /stats                    → contribution dashboard data
 ```
 
 **Database schema (simplified):**
 ```sql
-repos         (id, github_url, language, score, last_crawled_at)
+repos         (id, github_url, owner, name, language, stars, eligible, last_crawled_at)
 issues        (id, repo_id, github_id, title, score, status, claimed_by, claimed_at)
-runners       (id, token, contributor_name, preferences, quota_remaining, last_seen_at)
+runners       (id, token, contributor_name, quota_remaining_today, last_seen_at, active)
 contributions (id, issue_id, runner_id, pr_url, status, created_at)
+ingestion_runs (id, status, discovered_repos, seeded_repos, recrawled_repos, created_issues)
 ```
 
 **Issue status lifecycle:**
@@ -187,12 +190,11 @@ retries, contribution logging, stats, manual GitHub seeding, OpenAPI docs and
 unit/service tests. The remaining work is mainly about turning that backend MVP
 into a production/public hub.
 
-1. **Real GitHub ingestion**
-   - Move beyond manual repository seeding.
-   - Add the scheduled crawl described in the data flow: repository discovery,
-     pagination, recrawls, rate-limit handling, backoff and ingestion logs.
-   - Filter GitHub pull requests out of issue ingestion and handle paginated
-     issue responses.
+1. **GitHub ingestion hardening**
+   - Scheduled and manual discovery exist today, including pagination limits,
+     recrawls, backoff, rate-limit handling and ingestion logs.
+   - Continue hardening the ingestion against GitHub edge cases and tune the
+     discovery limits from real usage data.
 
 2. **Stronger scoring**
    - Expand repository scoring beyond stars to include CI, tests and recent

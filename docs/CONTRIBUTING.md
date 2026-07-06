@@ -43,7 +43,7 @@ The hub is available at:
 
 ```text
 http://localhost:8080
-http://localhost:8080/swagger-ui.html
+http://localhost:8080/docs
 ```
 
 ### Test pfg-hub
@@ -105,7 +105,9 @@ Detailed commands are listed in the component sections below.
 
 ## Running a pfg-runner (donate your API quota)
 
-> Available from **Milestone 4**. Stay tuned.
+The runner package exists and can be run locally, but the autonomous agent
+pipeline is still evolving. Treat it as a development path until the public hub
+and contributor onboarding are production-ready.
 
 ### Prerequisites
 
@@ -164,7 +166,7 @@ The hub is available at:
 
 ```text
 http://localhost:8080
-http://localhost:8080/swagger-ui.html
+http://localhost:8080/docs
 ```
 
 ### Running tests in Docker

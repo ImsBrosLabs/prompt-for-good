@@ -3,178 +3,128 @@
 
   # Prompt for Good
 
-  > *Your unused AI quota, working for open source.*
+  > Your unused AI quota, working for open source.
 </div>
 
-**Prompt for Good** (`pfg`) turns idle LLM API credits into real open-source contributions. Contributors run a lightweight Docker container with their own API key — the container claims pre-qualified GitHub issues, generates fixes autonomously, validates them (build + tests), and opens Pull Requests. No human in the loop.
+**Prompt for Good** (`pfg`) turns idle LLM API credits into open-source
+contributions. The project is split into a TypeScript hub API, a Python agent,
+and a Docker runner that packages the agent for contributors.
+
+The current codebase is an MVP. The hub already supports runner registration,
+issue dispatch, claiming, completion reporting, stats, OpenAPI docs, manual
+GitHub seeding, scheduled GitHub ingestion, and DB-backed tests. The agent and
+runner are still evolving toward the full autonomous "claim -> patch -> PR"
+workflow.
 
 ---
 
 ## How It Works
 
-```
-┌─────────────────────────────────────────────────────┐
-│                      pfg-hub                        │
-│           (Central server — hosted by maintainers)  │
-│                                                     │
-│  • Crawls GitHub → finds eligible OSS repos         │
-│  • Pre-qualifies issues (solvability scoring)       │
-│  • Runner registry + FIFO dispatch queue            │
-│  • Contribution tracking (PRs opened)               │
-│  • REST API                                         │
-└──────────────────────┬──────────────────────────────┘
-                       │ HTTP
-        ┌──────────────┴──────────────┐
-        │                             │
-┌───────▼────────┐          ┌─────────▼──────────┐
-│  pfg-runner    │          │    pfg-runner       │
-│  (Docker)      │          │    (Docker)         │
-│  Contributor A │          │    Contributor B    │
-│  LLM API key   │          │    LLM API key      │
-│  + pfg-agent   │          │    + pfg-agent      │
-└───────┬────────┘          └────────────────────-┘
-        │
-        ▼
-  GitHub API → Clone → Analyze → Patch → Build/Tests → PR
+```text
+                 +------------------------------+
+                 |            pfg-hub           |
+                 | NestJS + Fastify + Drizzle   |
+                 | PostgreSQL + GitHub REST API |
+                 |                              |
+                 | - runner registry            |
+                 | - issue queue                |
+                 | - scoring                    |
+                 | - GitHub seeding/ingestion   |
+                 | - contribution tracking      |
+                 +---------------+--------------+
+                                 |
+                                 | HTTP
+                                 |
+                  +--------------v--------------+
+                  |         pfg-runner          |
+                  | Docker image with pfg-agent |
+                  +--------------+--------------+
+                                 |
+                                 v
+             GitHub clone -> analyze -> patch -> test -> PR
 ```
 
-### The 7-Phase Agent Pipeline
+The intended agent pipeline is:
 
-| Phase | Description |
-|---|---|
-| 1. Claim | Fetch next qualified issue from pfg-hub |
-| 2. Analyze | LLM understands the problem, identifies impacted files |
-| 3. Context | Clone repo, extract only relevant code (AST/grep/embeddings) |
-| 4. Solve | LLM generates a targeted diff/patch |
-| 5. Verify | Apply patch, run build + tests locally (retry up to 3×) |
-| 6. PR | Push branch + open PR via GitHub API (LLM-generated description) |
-| 7. Report | Notify pfg-hub of success or failure |
+| Phase | Status | Description |
+|---|---|---|
+| 1. Claim | Implemented in hub | Runner fetches the next qualified issue |
+| 2. Analyze | Agent work in progress | LLM understands issue and likely files |
+| 3. Context | Agent work in progress | Clone repo and extract relevant context |
+| 4. Solve | Agent work in progress | Generate a targeted patch |
+| 5. Verify | Agent work in progress | Run build/tests locally and retry on failure |
+| 6. PR | Agent work in progress | Push branch and open a pull request |
+| 7. Report | Implemented in hub | Runner reports success/failure to the hub |
 
 ---
 
 ## Repository Structure
 
-```
+```text
 prompt-for-good/
-├── pfg-hub/          # Central server (NestJS + Drizzle + PostgreSQL)
-├── pfg-agent/        # Autonomous AI agent (Python + LangChain)
-├── pfg-runner/       # Docker container wrapping pfg-agent
-└── docs/             # Architecture, ADRs, contributing guides
+├── pfg-hub/      # Hub API: NestJS, Fastify, Drizzle, PostgreSQL
+├── pfg-agent/    # Agent runtime: Python 3.11, LangChain, Anthropic, GitPython
+├── pfg-runner/   # Docker packaging for pfg-agent
+├── docs/         # Architecture notes, ADRs, hub onboarding, contributing
+└── docker-compose.yml
 ```
 
-New to the hub codebase? Start with the
-[pfg-hub onboarding guide](docs/PFG_HUB_ONBOARDING.md), especially if you know
-NestJS with TypeORM and want the Drizzle mental model.
+Useful docs:
+
+- [Architecture overview](docs/ARCHITECTURE.md)
+- [pfg-hub onboarding](docs/PFG_HUB_ONBOARDING.md)
+- [Contributing guide](docs/CONTRIBUTING.md)
+- [Tech stack ADR](docs/ADR-001-tech-stack.md)
+- [Issue scoring ADR](docs/ADR-002-issue-scoring.md)
 
 ---
 
-## Quick Start (Contributors)
+## Quick Start
 
-> Coming in Milestone 4. For now, see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
-
-```bash
-# 1. Copy and configure
-cp pfg-runner/pfg.example.yaml pfg.yaml
-# Edit pfg.yaml with your API key and GitHub token
-
-# 2. Run
-docker run -v $(pwd)/pfg.yaml:/app/pfg.yaml \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -e GITHUB_TOKEN=ghp_... \
-  ghcr.io/imsbrostabs/pfg-runner:latest
-```
-
-## Development
-
-You can develop with Docker-based services or with native local tooling. The
-root `.env` file is only used by the root `docker-compose.yml`; native setups
-use the component-specific files such as `pfg-agent/.env.example`.
-
-### Option A: Docker-based development
+### Docker development
 
 Use this path if you do not want to install Node.js, Python, `uv`, or
 PostgreSQL locally.
 
-From the repository root:
-
 ```bash
 cp .env.example .env
 docker compose build
-```
-
-The root `.env` configures the services in `docker-compose.yml`:
-
-| Variable | Used by | Purpose |
-|---|---|---|
-| `PFG_HUB_PORT` | `hub` | Host port for the hub API |
-| `PFG_POSTGRES_PORT` | `postgres` | Host port for the dev database |
-| `ADMIN_KEY` | `hub` | Admin token for `/seed/**` endpoints |
-| `GITHUB_TOKEN` | `hub`, `agent`, `runner` | GitHub API token when real calls are needed |
-| `PFG_HUB_URL` | `agent`, `runner` | Hub URL seen from containers |
-| `PFG_TOKEN` | `agent`, `runner` | Runner token used to call the hub |
-| `RUNNER_ID` | `agent`, `runner` | Registered runner id |
-| `ANTHROPIC_API_KEY` | `agent`, `runner` | LLM API key |
-| `CONTRIBUTOR_NAME` | `agent`, `runner` | Contributor display name |
-| `MAX_TOKENS_PER_DAY` | `agent`, `runner` | Local daily LLM budget |
-
-Run the hub:
-
-```bash
 docker compose up hub
 ```
 
 The hub is available at:
 
 ```text
-http://localhost:8080
-http://localhost:8080/swagger-ui.html
+http://localhost:8080/actuator/health
+http://localhost:8080/docs
+http://localhost:8080/docs-json
 ```
 
-Run hub checks:
+Run checks in Docker:
 
 ```bash
-# Full hub test suite
+# Hub tests, including DB-backed specs against postgres-test
 docker compose run --rm hub-test
 
-# One hub test file
-docker compose run --rm hub-test npm test -- test/scoring.service.spec.ts
-
-# TypeScript lint
+# Hub lint
 docker compose run --rm hub-lint
-```
 
-Run agent checks:
-
-```bash
-# Full agent test suite
+# Agent tests and lint
 docker compose run --rm agent-test
-
-# One agent test file
-docker compose run --rm agent-test uv run --extra dev pytest tests/test_context.py -q
-
-# Python lint / format checks
 docker compose run --rm agent-lint
 docker compose run --rm agent-format-check
 ```
 
-Run the agent against the local hub:
+Run the agent or runner against the local hub:
 
 ```bash
-docker compose up hub
-docker compose run --rm agent
-```
-
-Run the local runner image:
-
-```bash
+docker compose --profile agent up agent
 docker compose --profile runner up runner
 ```
 
-### Option B: Native development
+### Native hub development
 
-Use this path if you prefer local IDE/tooling integration.
-
-For `pfg-hub`, install Node.js 22+. You can still use Docker only for PostgreSQL:
+Use this path if you want local IDE/tooling integration for the TypeScript hub.
 
 ```bash
 cd pfg-hub
@@ -184,15 +134,19 @@ npm run db:migrate
 npm run dev
 ```
 
-Run hub tests natively:
+Run hub checks:
 
 ```bash
 cd pfg-hub
 npm test
 npm run lint
+npx tsc -p tsconfig.json --noEmit --incremental false
 ```
 
-For `pfg-agent`, install Python 3.11+ and `uv`:
+By default, `npm test` skips DB-backed integration/e2e specs. To run them,
+provide a test PostgreSQL database and set `RUN_DB_TESTS=true`.
+
+### Native agent development
 
 ```bash
 cd pfg-agent
@@ -203,10 +157,7 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-The native `pfg-agent/.env` configures the agent process itself. It is separate
-from the root `.env` used by Docker Compose.
-
-For `pfg-runner`, use the runner-specific Compose setup:
+### Runner-only development
 
 ```bash
 cd pfg-runner
@@ -214,18 +165,90 @@ cp .env.example .env
 docker compose up
 ```
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for more contribution
-workflow details.
+---
+
+## Hub API
+
+The hub is the main implemented service today. Runtime docs are generated by
+Nest Swagger at `/docs`.
+
+Current endpoints:
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/actuator/health` | none | Health check |
+| `GET` | `/docs` | none | Swagger UI |
+| `GET` | `/docs-json` | none | OpenAPI JSON |
+| `GET` | `/stats` | none | Queue/contribution stats |
+| `POST` | `/runners/register` | none | Register a runner and receive a token |
+| `POST` | `/runners/:id/heartbeat` | `X-Runner-Token` | Update runner liveness/quota |
+| `GET` | `/issues/next` | `X-Runner-Token` | Fetch the next pending issue |
+| `POST` | `/issues/:id/claim` | `X-Runner-Token` | Claim an issue |
+| `POST` | `/issues/:id/done` | `X-Runner-Token` | Report success or failure |
+| `POST` | `/seed/default` | `X-Admin-Token` | Seed the default demo repository |
+| `POST` | `/seed/repo` | `X-Admin-Token` | Seed one GitHub repository |
+| `POST` | `/seed/discover` | `X-Admin-Token` | Discover repositories from GitHub issue search |
+
+Example runner flow:
+
+```bash
+curl -s -X POST http://localhost:8080/runners/register \
+  -H 'Content-Type: application/json' \
+  -d '{"contributorName":"octocat"}'
+
+curl -i http://localhost:8080/issues/next \
+  -H 'X-Runner-Token: <runner-token>'
+```
+
+Example admin seed:
+
+```bash
+curl -X POST http://localhost:8080/seed/repo \
+  -H 'Content-Type: application/json' \
+  -H 'X-Admin-Token: dev-admin-key' \
+  -d '{"owner":"nestjs","name":"nestjs"}'
+```
 
 ---
 
-## Milestones
+## Configuration
 
-- **M1 — Foundation:** pfg-hub core API + basic agent (claim → analyze)
-- **M2 — Code Intelligence:** smart context extraction (no wasted tokens)
-- **M3 — Full Contribution:** patch → verify → PR → report
-- **M4 — Distribution:** Docker runner, contributor onboarding in < 5 min
-- **M5 — Production:** public release, secure authentication, stats dashboard, `promptforgood.dev`
+The root `.env` is used by the root `docker-compose.yml`. Native processes read
+environment variables directly unless their component explicitly loads an env
+file.
+
+Hub variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PFG_HUB_PORT` | `8080` | Host port used by root Docker Compose |
+| `PFG_POSTGRES_PORT` | `5432` | Host port for the dev PostgreSQL container |
+| `PORT` | `8080` | Hub HTTP port inside the Node process |
+| `DATABASE_URL` | local postgres URL | Hub PostgreSQL connection string |
+| `ADMIN_KEY` | empty | Admin token required by `/seed/**` |
+| `GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |
+| `GITHUB_INGESTION_ENABLED` | `false` | Enable scheduled GitHub ingestion |
+| `GITHUB_INGESTION_CRON` | `0 */6 * * *` | Ingestion cron expression |
+| `GITHUB_RECRAWL_AFTER_MS` | `21600000` | Minimum age before recrawling a repo |
+| `GITHUB_MAX_RETRIES` | `3` | GitHub retry count for retryable failures |
+| `GITHUB_BACKOFF_BASE_MS` | `1000` | Base retry delay |
+| `GITHUB_DISCOVERY_MAX_PAGES_PER_LABEL` | `2` | Search pages fetched per discovery label |
+| `GITHUB_DISCOVERY_MAX_REPOSITORIES` | `50` | Max repositories discovered per run |
+| `GITHUB_MIN_RATE_LIMIT_REMAINING` | `5` | Stop early when GitHub quota is low |
+| `ISSUE_MAX_RETRIES` | `3` | Failed issue retry budget |
+| `ISSUE_MIN_SCORE` | `60` | Minimum score for imported issues |
+
+Agent/runner variables:
+
+| Variable | Purpose |
+|---|---|
+| `PFG_HUB_URL` | Hub URL used by the agent/runner |
+| `PFG_TOKEN` | Runner token returned by the hub |
+| `RUNNER_ID` | Runner id returned by the hub |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `GITHUB_TOKEN` | GitHub token used by the agent |
+| `CONTRIBUTOR_NAME` | Contributor display name |
+| `MAX_TOKENS_PER_DAY` | Local daily token budget |
 
 ---
 
@@ -233,30 +256,28 @@ workflow details.
 
 | Component | Stack |
 |---|---|
-| pfg-hub | NestJS, Drizzle, PostgreSQL |
-| pfg-agent | Python, LangChain, GitPython |
-| pfg-runner | Docker |
-| Default LLM | Claude (claude-sonnet-4-6), extensible to OpenAI/Gemini |
+| `pfg-hub` | TypeScript, NestJS 11, Fastify, Drizzle, PostgreSQL, Vitest |
+| `pfg-agent` | Python 3.11, LangChain, Anthropic SDK, GitPython, PyGithub, httpx |
+| `pfg-runner` | Docker image wrapping `pfg-agent` |
+| Default LLM | Claude via Anthropic, with future provider expansion planned |
 
 ---
 
-## Philosophy
+## Roadmap
 
-- **Zero waste:** Issues are scored and pre-qualified before any LLM token is spent
-- **Safety first:** A patch is only submitted as a PR if build + tests pass locally
-- **Contributor-friendly:** Bring your own API key, control your quota limits and active hours
-- **Open by design:** Plugin-friendly architecture, multi-LLM support planned
+- Expand GitHub repository eligibility beyond stars.
+- Strengthen issue scoring and solvability checks.
+- Finish the autonomous agent pipeline from patch generation to PR creation.
+- Add runner preferences and preference-aware dispatch.
+- Add production-grade auth, token rotation, observability, and deployment.
+- Build a public dashboard for repositories, issues, runners, and contributions.
 
 ---
 
 ## License
 
-MIT — See [LICENSE](LICENSE)
-
----
+MIT. See [LICENSE](LICENSE).
 
 ## Contributing
 
-See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
-
-Built with ❤️ by [ImsBrosLabs](https://github.com/ImsBrosLabs)
+See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
