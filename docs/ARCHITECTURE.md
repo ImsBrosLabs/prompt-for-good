@@ -10,7 +10,8 @@ The central server. Hosts the pre-qualified issue queue and coordinates runners.
 - Periodic GitHub crawl to discover eligible open-source repositories
 - Repository scoring (CI presence, test coverage, recent activity)
 - Issue scoring (label quality, description clarity, estimated scope)
-- FIFO dispatch queue: first available runner gets the next issue
+- Preference-aware dispatch queue: each runner gets the best issue matching its
+  own project criteria
 - Runner registry with heartbeat tracking and token quota monitoring
 - Contribution log (PR URLs, status, timestamps)
 
@@ -19,11 +20,11 @@ The central server. Hosts the pre-qualified issue queue and coordinates runners.
 **REST API:**
 ```
 GET  /repos                    → list of qualified repositories
-GET  /issues/next              → next available issue (FIFO)
+GET  /issues/next              → next available issue matching runner criteria
 POST /issues/{id}/claim        → runner claims an issue
 POST /issues/{id}/done         → runner reports PR opened or failure
-POST /runners/register         → register a new runner
-POST /runners/{id}/heartbeat   → runner signals it is alive
+POST /runners/register         → register a new runner and initial preferences
+POST /runners/{id}/heartbeat   → runner signals it is alive and may refresh preferences
 GET  /stats                    → contribution dashboard data
 ```
 
@@ -31,7 +32,7 @@ GET  /stats                    → contribution dashboard data
 ```sql
 repos         (id, github_url, language, score, last_crawled_at)
 issues        (id, repo_id, github_id, title, score, status, claimed_by, claimed_at)
-runners       (id, token, contributor_name, quota_remaining, last_seen_at)
+runners       (id, token, contributor_name, preferences, quota_remaining, last_seen_at)
 contributions (id, issue_id, runner_id, pr_url, status, created_at)
 ```
 
@@ -88,6 +89,13 @@ The autonomous AI worker. Runs inside each pfg-runner container.
 - File selection via AST analysis + grep before any LLM call
 - Target context window: < 100k tokens per issue
 
+**Runner preferences:**
+- The agent is not the primary matcher for project preferences.
+- It loads contributor preferences from the runner config and sends them to the
+  hub during registration or heartbeat.
+- It may keep a local guardrail check before starting work, but the hub should
+  avoid dispatching non-matching issues in the first place.
+
 ---
 
 ### pfg-runner
@@ -95,6 +103,14 @@ The autonomous AI worker. Runs inside each pfg-runner container.
 The Docker container that contributors deploy.
 
 **Stack:** Docker (Python base image, pfg-agent embedded)
+
+**Runner-owned policy:**
+- Project preferences belong to the runner because they express how a
+  contributor wants to spend local machine time, GitHub access and LLM quota.
+- The runner config is the user-facing source of truth.
+- The hub persists those preferences and uses them during dispatch.
+- The agent acts as the transport layer between local config and hub API, then
+  executes the assigned issue.
 
 **Configuration (`pfg.yaml`):**
 ```yaml
@@ -115,6 +131,16 @@ hub:
 contributor:
   name: "YourName"
   github_token: ${GITHUB_TOKEN}
+
+project_preferences:
+  languages: ["python", "typescript"]
+  ecosystems: ["npm", "pip"]
+  allow_repos: []
+  block_repos: ["owner/repo-to-avoid"]
+  labels: ["bug", "good first issue"]
+  licenses: ["MIT", "Apache-2.0"]
+  max_difficulty: "medium"
+  max_estimated_minutes: 120
 ```
 
 ---
@@ -129,7 +155,9 @@ pfg-hub (cron job, every 6h)
   → insert qualified issues into DB with status=pending
 
 pfg-runner (running on contributor machine)
+  → pfg-agent reads runner config and sends preferences to pfg-hub
   → poll pfg-hub GET /issues/next
+  → pfg-hub filters issues by runner preferences, quota and availability
   → pfg-agent executes 7-phase pipeline
   → pfg-hub POST /issues/{id}/done
 ```
@@ -141,7 +169,7 @@ pfg-runner (running on contributor machine)
 | Decision | Rationale |
 |---|---|
 | Pre-qualification before dispatch | Avoid wasting LLM tokens on un-solvable or out-of-scope issues |
-| FIFO dispatch | Simple, fair, no coordination overhead between runners |
+| Preference-aware dispatch in pfg-hub | Runner preferences are contributor policy, but dispatch must happen before an issue is claimed to avoid wasted work |
 | Build + tests must pass before PR | No noise PRs; only real contributions |
 | Shallow clone | Minimize disk usage and clone time on contributor machines |
 | Bring-your-own API key | Contributors control their spending; no central API key risk |
@@ -171,8 +199,8 @@ into a production/public hub.
      activity.
    - Expand issue scoring with scope estimation, difficulty tiers and stronger
      solvability signals.
-   - Align the "FIFO" documentation with the current implementation, which
-     dispatches by `score desc, created_at asc`.
+   - Evolve the current `score desc, created_at asc` dispatch order into
+     preference-aware matching.
 
 3. **Queue robustness**
    - Reclaim or fail stale `CLAIMED` issues after a timeout.
@@ -180,22 +208,33 @@ into a production/public hub.
    - Mark runners inactive when heartbeat freshness expires.
    - Prevent duplicate GitHub issues across recrawls and repository records.
 
-4. **Runtime API validation**
+4. **Runner project preferences**
+   - Let runners declare project selection criteria instead of receiving any
+     globally eligible issue.
+   - Support preferences such as allowed/blocked repositories, languages,
+     ecosystems, licenses, issue labels, difficulty tiers and maximum estimated
+     runtime.
+   - Persist runner preferences in the hub and include them in issue dispatch
+     matching.
+   - Expose the same preferences in the runner configuration file so
+     contributors can control which projects their local quota may work on.
+
+5. **Runtime API validation**
    - Add structured request validation for DTOs.
    - Validate PR URLs, non-negative token counts, non-negative quota values and
      required completion fields.
 
-5. **Production security**
+6. **Production security**
    - Replace static admin-token authentication with scoped bearer auth such as
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-6. **Dashboard and missing API surface**
+7. **Dashboard and missing API surface**
    - Build the public hub dashboard for repositories, issues, pull requests,
      contributors, runners and token usage.
    - Add the documented `GET /repos` endpoint.
 
-7. **Operations and deployment**
+8. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.
