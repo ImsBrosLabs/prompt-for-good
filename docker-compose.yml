@@ -2,14 +2,15 @@ name: prompt-for-good
 
 x-hub-environment: &hub-environment
   DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg
-  GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
-  ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
 
 x-hub-test-environment: &hub-test-environment
   DATABASE_URL: postgresql://pfg:pfg@postgres-test:5432/pfg_test
-  GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
   ADMIN_KEY: ${ADMIN_KEY:-test-admin-key}
   RUN_DB_TESTS: "true"
+
+x-hub-env-file: &hub-env-file
+  - path: ./.env
+    required: false
 
 x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
@@ -69,6 +70,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file: *hub-env-file
     environment:
       <<: *hub-environment
     ports:
@@ -83,6 +85,7 @@ services:
     depends_on:
       postgres-test:
         condition: service_healthy
+    env_file: *hub-env-file
     environment:
       <<: *hub-test-environment
     volumes: *hub-volumes

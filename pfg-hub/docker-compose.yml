@@ -22,10 +22,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: false
+      - path: ./.env
+        required: false
     environment:
       DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-dummy}
-      ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key}
     ports:
       - "8080:8080"
     volumes:

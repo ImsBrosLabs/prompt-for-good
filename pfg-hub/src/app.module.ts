@@ -1,4 +1,6 @@
 import { Module } from "@nestjs/common";
+import { ScheduleModule } from "@nestjs/schedule";
+import { AppConfigModule } from "./config";
 import { DatabaseModule } from "./db/database.module";
 import { GitHubModule } from "./github/github.module";
 import { HealthController } from "./health/health.controller";
@@ -10,6 +12,8 @@ import { StatsModule } from "./stats/stats.module";
 
 @Module({
   imports: [
+    AppConfigModule,
+    ScheduleModule.forRoot(),
     DatabaseModule,
     ScoringModule,
     RunnersModule,

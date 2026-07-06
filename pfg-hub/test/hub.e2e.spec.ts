@@ -22,6 +22,7 @@ import { AppModule } from "../src/app.module";
 import { DATABASE, Database, PG_POOL } from "../src/db/database.module";
 import {
   contributions,
+  ingestionRuns,
   issues,
   repos,
   runners,
@@ -623,7 +624,7 @@ describeDb("hub e2e", () => {
 
         if (
           requestUrl.endsWith(
-            "/repos/acme/project/issues?state=open&labels=bug,good%20first%20issue,help%20wanted",
+            "/repos/acme/project/issues?state=open&labels=bug,good%20first%20issue,help%20wanted&per_page=100",
           )
         ) {
           return jsonResponse([
@@ -644,6 +645,18 @@ describeDb("hub e2e", () => {
               body: "Needs work",
               html_url: "https://github.com/acme/project/issues/2",
               labels: [{ name: "question" }],
+            },
+            {
+              id: 1003,
+              title: "Open pull request",
+              body: "This should not enter the issue queue",
+              html_url: "https://github.com/acme/project/pull/3",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+              pull_request: {},
             },
           ]);
         }
@@ -688,6 +701,173 @@ describeDb("hub e2e", () => {
       score: 85,
       status: "PENDING",
     });
+  });
+
+  it("discovers repositories from GitHub issue search and seeds each one once", async () => {
+    const fetchMock = vi.fn(
+      async (url: string | URL | Request): Promise<Response> => {
+        const requestUrl = new URL(String(url));
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("fixture") === "good-first-page-2"
+        ) {
+          return jsonResponse({
+            items: [
+              {
+                repository_url: "https://api.github.com/repos/beta/tool",
+              },
+            ],
+          });
+        }
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("good first issue")
+        ) {
+          return jsonResponse(
+            {
+              items: [
+                {
+                  repository_url: "https://api.github.com/repos/acme/project",
+                },
+                {
+                  repository_url: "https://api.github.com/repos/acme/project",
+                  pull_request: {},
+                },
+              ],
+            },
+            true,
+            {
+              link: '<https://api.github.com/search/issues?fixture=good-first-page-2>; rel="next"',
+            },
+          );
+        }
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("help wanted")
+        ) {
+          return jsonResponse({
+            items: [
+              {
+                repository_url: "https://api.github.com/repos/acme/project",
+              },
+            ],
+          });
+        }
+
+        if (requestUrl.pathname === "/repos/acme/project") {
+          return jsonResponse({
+            stargazers_count: 100,
+            language: "TypeScript",
+          });
+        }
+
+        if (requestUrl.pathname === "/repos/beta/tool") {
+          return jsonResponse({
+            stargazers_count: 90,
+            language: "Python",
+          });
+        }
+
+        if (requestUrl.pathname === "/repos/acme/project/issues") {
+          return jsonResponse([
+            {
+              id: 2001,
+              title: "Qualified acme issue",
+              body: "Expected actual reproduce ".repeat(20),
+              html_url: "https://github.com/acme/project/issues/10",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+            },
+          ]);
+        }
+
+        if (requestUrl.pathname === "/repos/beta/tool/issues") {
+          return jsonResponse([
+            {
+              id: 3001,
+              title: "Qualified beta issue",
+              body: "Expected actual reproduce ".repeat(20),
+              html_url: "https://github.com/beta/tool/issues/20",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+            },
+          ]);
+        }
+
+        return jsonResponse({ message: "not found" }, false);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      searchedLabels: ["good first issue", "help wanted"],
+      discoveredRepos: 2,
+      seededRepos: 2,
+      recrawledRepos: 0,
+      createdIssues: 2,
+      skippedPullRequests: 0,
+    });
+    expect(response.body.runId).toEqual(expect.any(String));
+
+    expect(await countRows("repos")).toBe(2);
+    expect(await countRows("issues")).toBe(2);
+
+    const [run] = await db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, response.body.runId as string))
+      .limit(1);
+    expect(run).toMatchObject({
+      status: "SUCCESS",
+      discoveredRepos: 2,
+      seededRepos: 2,
+      recrawledRepos: 0,
+      createdIssues: 2,
+      skippedPullRequests: 0,
+    });
+    expect(run.finishedAt).toBeInstanceOf(Date);
+  });
+
+  it("records rate-limited ingestion runs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          { message: "rate limited" },
+          false,
+          { "x-ratelimit-remaining": "0" },
+          403,
+        ),
+      ),
+    );
+
+    const response = await request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken)
+      .expect(500);
+
+    expect(response.body.error).toBe("GitHub API rate-limited with 403");
+
+    const [run] = await db.select().from(ingestionRuns).limit(1);
+    expect(run).toMatchObject({
+      status: "RATE_LIMITED",
+      errorMessage: "GitHub API rate-limited with 403",
+    });
+    expect(run.finishedAt).toBeInstanceOf(Date);
   });
 
   async function registerRunner(
@@ -742,7 +922,7 @@ describeDb("hub e2e", () => {
 
   async function truncateDb(): Promise<void> {
     await pool.query(
-      "TRUNCATE contributions, issues, runners, repos RESTART IDENTITY CASCADE",
+      "TRUNCATE ingestion_runs, contributions, issues, runners, repos RESTART IDENTITY CASCADE",
     );
   }
 
@@ -754,7 +934,6 @@ describeDb("hub e2e", () => {
     );
     return Number(result.rows[0]?.count ?? 0);
   }
-
 });
 
 function restoreEnv(name: string, value: string | undefined): void {
@@ -765,9 +944,20 @@ function restoreEnv(name: string, value: string | undefined): void {
   }
 }
 
-function jsonResponse(body: unknown, ok = true): Response {
+function jsonResponse(
+  body: unknown,
+  ok = true,
+  headers: Record<string, string> = {},
+  status = ok ? 200 : 404,
+): Response {
   return {
     ok,
+    status,
+    headers: {
+      get(name: string): string | null {
+        return headers[name.toLowerCase()] ?? null;
+      },
+    },
     json: async () => body,
   } as Response;
 }

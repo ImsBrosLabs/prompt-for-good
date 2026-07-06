@@ -16,7 +16,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
-import { GitHubService } from "../github/github.service";
+import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
 
 @Controller("seed")
 @UseGuards(AdminTokenGuard)
@@ -75,5 +75,23 @@ export class SeedController {
     await this.githubService.seedRepo("nodejs", "node");
     await this.githubService.seedRepo("psf", "requests");
     await this.githubService.seedRepo("scikit-learn", "scikit-learn");
+  }
+
+  @Post("discover")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Discover repositories from GitHub issues",
+    description:
+      "Searches GitHub for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
+  })
+  @ApiOkResponse({ description: "Repository discovery completed" })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  @ApiResponse({
+    status: 502,
+    description: "GitHub API unreachable or rate-limited",
+  })
+  /** Discovers candidate repositories from GitHub issue search. */
+  async discoverRepos(): Promise<GitHubDiscoveryResult & { runId: string }> {
+    return this.githubService.runIngestion();
   }
 }

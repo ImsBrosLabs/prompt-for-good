@@ -11,9 +11,16 @@ import {
 
 export const issueStatuses = ["PENDING", "CLAIMED", "DONE", "FAILED"] as const;
 export const contributionStatuses = ["SUCCESS", "FAILED"] as const;
+export const ingestionRunStatuses = [
+  "STARTED",
+  "SUCCESS",
+  "FAILED",
+  "RATE_LIMITED",
+] as const;
 
 export type IssueStatus = (typeof issueStatuses)[number];
 export type ContributionStatus = (typeof contributionStatuses)[number];
+export type IngestionRunStatus = (typeof ingestionRunStatuses)[number];
 
 export const repos = pgTable("repos", {
   id: varchar("id", { length: 36 }).primaryKey(),
@@ -92,6 +99,29 @@ export const contributions = pgTable("contributions", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 
+export const ingestionRuns = pgTable(
+  "ingestion_runs",
+  {
+    id: varchar("id", { length: 36 }).primaryKey(),
+    status: varchar("status", { length: 50 })
+      .$type<IngestionRunStatus>()
+      .notNull()
+      .default("STARTED"),
+    discoveredRepos: integer("discovered_repos").notNull().default(0),
+    seededRepos: integer("seeded_repos").notNull().default(0),
+    recrawledRepos: integer("recrawled_repos").notNull().default(0),
+    createdIssues: integer("created_issues").notNull().default(0),
+    skippedPullRequests: integer("skipped_pull_requests").notNull().default(0),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at", { mode: "date" }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { mode: "date" }),
+  },
+  (table) => ({
+    statusIdx: index("idx_ingestion_runs_status").on(table.status),
+    startedAtIdx: index("idx_ingestion_runs_started_at").on(table.startedAt),
+  }),
+);
+
 export type Repo = typeof repos.$inferSelect;
 export type NewRepo = typeof repos.$inferInsert;
 export type Issue = typeof issues.$inferSelect;
@@ -100,3 +130,5 @@ export type Runner = typeof runners.$inferSelect;
 export type NewRunner = typeof runners.$inferInsert;
 export type Contribution = typeof contributions.$inferSelect;
 export type NewContribution = typeof contributions.$inferInsert;
+export type IngestionRun = typeof ingestionRuns.$inferSelect;
+export type NewIngestionRun = typeof ingestionRuns.$inferInsert;
