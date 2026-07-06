@@ -1,10 +1,11 @@
 import {
   CanActivate,
   ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { loadConfig } from "../config";
+import { APP_CONFIG, AppConfig } from "../config";
 
 type RequestWithHeaders = {
   headers: Record<string, string | string[] | undefined>;
@@ -12,9 +13,11 @@ type RequestWithHeaders = {
 
 @Injectable()
 export class AdminTokenGuard implements CanActivate {
+  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+
   /** Allows seed endpoints only when X-Admin-Token matches ADMIN_KEY. */
   canActivate(context: ExecutionContext): boolean {
-    const { adminKey } = loadConfig();
+    const { adminKey } = this.config;
     const request = context.switchToHttp().getRequest<RequestWithHeaders>();
     const token = request.headers["x-admin-token"];
 

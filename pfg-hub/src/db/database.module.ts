@@ -2,7 +2,7 @@ import { Global, Inject, Injectable, Module } from "@nestjs/common";
 import type { OnApplicationShutdown } from "@nestjs/common";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { loadConfig } from "../config";
+import { APP_CONFIG, AppConfig } from "../config";
 import * as schema from "./schema";
 
 export const DATABASE = Symbol("DATABASE");
@@ -25,9 +25,10 @@ class PgPoolLifecycle implements OnApplicationShutdown {
   providers: [
     {
       provide: PG_POOL,
+      inject: [APP_CONFIG],
       // Creates the PostgreSQL pool used by all database providers.
-      useFactory: () =>
-        new Pool({ connectionString: loadConfig().databaseUrl }),
+      useFactory: (config: AppConfig) =>
+        new Pool({ connectionString: config.databaseUrl }),
     },
     {
       provide: DATABASE,

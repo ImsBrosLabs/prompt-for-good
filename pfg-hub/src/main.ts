@@ -5,7 +5,7 @@ import {
 } from "@nestjs/platform-fastify";
 import "reflect-metadata";
 import { AppModule } from "./app.module";
-import { loadConfig } from "./config";
+import { APP_CONFIG, AppConfig } from "./config";
 import { GlobalExceptionFilter } from "./errors/global-exception.filter";
 import { configureOpenApi } from "./openapi/swagger";
 
@@ -19,7 +19,7 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
   configureOpenApi(app);
 
-  const { port } = loadConfig();
+  const { port } = app.get<AppConfig>(APP_CONFIG);
   await app.listen(port, "0.0.0.0");
 }
 

@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { loadConfig } from "../config";
+import { APP_CONFIG, AppConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, Issue, issues, repos } from "../db/schema";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
@@ -21,6 +21,7 @@ export class IssuesService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(RunnersService)
     private readonly runnersService: RunnersService,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /** Returns the highest-priority pending issue available to a valid runner. */
@@ -88,7 +89,7 @@ export class IssuesService {
       ? issue.retryCount
       : issue.retryCount + 1;
     const nextStatus =
-      !request.success && retryCount < loadConfig().issueMaxRetries
+      !request.success && retryCount < this.config.issueMaxRetries
         ? "PENDING"
         : request.success
           ? "DONE"

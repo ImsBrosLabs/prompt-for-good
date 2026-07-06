@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
+import { AppConfig } from "../src/config";
 import { Database } from "../src/db/database.module";
 import { Issue, Runner } from "../src/db/schema";
 import { IssuesService } from "../src/issues/issues.service";
@@ -17,6 +18,23 @@ const runner: Runner = {
   lastSeenAt: null,
   active: true,
   createdAt: new Date("2026-01-01T00:00:00Z"),
+};
+
+const config: AppConfig = {
+  port: 8080,
+  databaseUrl: "postgresql://test",
+  githubToken: "test-github-token",
+  adminKey: "test-admin-key",
+  issueMaxRetries: 3,
+  issueMinScore: 60,
+  githubIngestionEnabled: false,
+  githubIngestionCron: "0 */6 * * *",
+  githubRecrawlAfterMs: 6 * 60 * 60 * 1000,
+  githubMaxRetries: 3,
+  githubBackoffBaseMs: 1000,
+  githubDiscoveryMaxPagesPerLabel: 2,
+  githubDiscoveryMaxRepositories: 50,
+  githubMinRateLimitRemaining: 5,
 };
 
 const issue: Issue = {
@@ -91,7 +109,7 @@ function createIssuesService(options: {
   } as unknown as RunnersService;
 
   return {
-    service: new IssuesService(db, runnersService),
+    service: new IssuesService(db, runnersService, config),
     select,
     update,
     txUpdate,
@@ -172,9 +190,9 @@ describe("IssuesService", () => {
       updateRows: [],
       selectResults: [[]],
     }).service;
-    await expect(missing.claimIssue("missing", "token-1")).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      missing.claimIssue("missing", "token-1"),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
     const alreadyClaimed = createIssuesService({
       updateRows: [],

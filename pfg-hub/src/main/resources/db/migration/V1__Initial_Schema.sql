@@ -49,6 +49,21 @@ CREATE TABLE IF NOT EXISTS contributions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+    id VARCHAR(36) PRIMARY KEY,
+    status VARCHAR(50) NOT NULL DEFAULT 'STARTED',
+    discovered_repos INT NOT NULL DEFAULT 0,
+    seeded_repos INT NOT NULL DEFAULT 0,
+    recrawled_repos INT NOT NULL DEFAULT 0,
+    created_issues INT NOT NULL DEFAULT 0,
+    skipped_pull_requests INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_score ON issues(score);
 CREATE INDEX IF NOT EXISTS idx_runners_token ON runners(token);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_started_at ON ingestion_runs(started_at);
