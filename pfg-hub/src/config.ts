@@ -2,6 +2,9 @@ import { Global, Module } from "@nestjs/common";
 
 export type AppConfig = {
   port: number;
+  httpsEnabled: boolean;
+  httpsCertPath: string;
+  httpsKeyPath: string;
   databaseUrl: string;
   githubToken: string;
   adminKey: string;
@@ -23,6 +26,11 @@ export const APP_CONFIG = Symbol("APP_CONFIG");
 export function loadConfig(): AppConfig {
   return {
     port: Number(process.env.PORT ?? 8080),
+    httpsEnabled: process.env.HTTPS_ENABLED === "true",
+    httpsCertPath:
+      process.env.HTTPS_CERT_PATH ?? "./certs/hub.pfg.local.pem",
+    httpsKeyPath:
+      process.env.HTTPS_KEY_PATH ?? "./certs/hub.pfg.local-key.pem",
     databaseUrl:
       process.env.DATABASE_URL ?? "postgresql://pfg:pfg@localhost:5432/pfg",
     githubToken: process.env.GITHUB_TOKEN ?? "dummy",

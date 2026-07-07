@@ -7,6 +7,20 @@
 pfg.yaml
 !pfg.example.yaml
 
+# Local TLS certificates and private keys
+certs/*.pem
+**/certs/*.pem
+certs/*.key
+**/certs/*.key
+certs/*.crt
+**/certs/*.crt
+certs/*.csr
+**/certs/*.csr
+certs/*.p12
+**/certs/*.p12
+certs/*.pfx
+**/certs/*.pfx
+
 # Python
 __pycache__/
 *.py[cod]

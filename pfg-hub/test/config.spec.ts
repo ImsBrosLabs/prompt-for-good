@@ -21,4 +21,28 @@ describe("loadConfig", () => {
 
     expect(loadConfig().databaseUrl).toBe("postgresql://direct");
   });
+
+  it("keeps HTTPS disabled by default with mkcert local paths configured", () => {
+    delete process.env.HTTPS_ENABLED;
+    delete process.env.HTTPS_CERT_PATH;
+    delete process.env.HTTPS_KEY_PATH;
+
+    expect(loadConfig()).toMatchObject({
+      httpsEnabled: false,
+      httpsCertPath: "./certs/hub.pfg.local.pem",
+      httpsKeyPath: "./certs/hub.pfg.local-key.pem",
+    });
+  });
+
+  it("reads HTTPS settings from the environment", () => {
+    process.env.HTTPS_ENABLED = "true";
+    process.env.HTTPS_CERT_PATH = "./custom/cert.pem";
+    process.env.HTTPS_KEY_PATH = "./custom/key.pem";
+
+    expect(loadConfig()).toMatchObject({
+      httpsEnabled: true,
+      httpsCertPath: "./custom/cert.pem",
+      httpsKeyPath: "./custom/key.pem",
+    });
+  });
 });

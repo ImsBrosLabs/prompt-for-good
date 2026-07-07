@@ -5,6 +5,9 @@ import { GitHubService } from "../src/github/github.service";
 
 const baseConfig: AppConfig = {
   port: 8080,
+  httpsEnabled: false,
+  httpsCertPath: "./certs/hub.pfg.local.pem",
+  httpsKeyPath: "./certs/hub.pfg.local-key.pem",
   databaseUrl: "postgresql://pfg:pfg@localhost:5432/pfg",
   githubToken: "test-token",
   adminKey: "test-admin-key",

@@ -146,6 +146,89 @@ npx tsc -p tsconfig.json --noEmit --incremental false
 By default, `npm test` skips DB-backed integration/e2e specs. To run them,
 provide a test PostgreSQL database and set `RUN_DB_TESTS=true`.
 
+### Local HTTPS with mkcert
+
+The hub can run locally over HTTPS on `hub.pfg.local`. Add the local hostname to
+your hosts file:
+
+```text
+127.0.0.1 hub.pfg.local
+```
+
+Generate local certificates with `mkcert` and place them in the hub working
+directory:
+
+```bash
+mkcert -install
+cd pfg-hub
+mkdir -p certs
+cd certs
+mkcert hub.pfg.local
+```
+
+This creates:
+
+```text
+certs/hub.pfg.local.pem
+certs/hub.pfg.local-key.pem
+```
+
+Run the hub with HTTPS enabled:
+
+```bash
+cd pfg-hub
+HTTPS_ENABLED=true \
+HTTPS_CERT_PATH=./certs/hub.pfg.local.pem \
+HTTPS_KEY_PATH=./certs/hub.pfg.local-key.pem \
+npm run dev
+```
+
+Then open:
+
+```text
+https://hub.pfg.local:8080/docs
+```
+
+If HTTPS is disabled or either certificate file is missing, the hub starts in
+HTTP mode as before.
+
+### Hoppscotch local HTTPS
+
+When testing the local HTTPS hub from Hoppscotch, keep certificate verification
+enabled and trust the local mkcert CA instead.
+
+First, ensure the hub is running at:
+
+```text
+https://hub.pfg.local:8080
+```
+
+Find the mkcert CA location:
+
+```bash
+mkcert -CAROOT
+```
+
+In Hoppscotch, import `rootCA.pem` from that directory:
+
+```text
+Settings -> Interceptor -> Native -> CA Certificates
+```
+
+Keep `Verify Host` and `Verify Peer` enabled.
+
+Set a Hoppscotch environment variable:
+
+```text
+baseUrl = https://hub.pfg.local:8080
+```
+
+Then test:
+
+```text
+GET {{baseUrl}}/actuator/health
+```
+
 ### Native agent development
 
 ```bash
@@ -217,6 +300,13 @@ The root `.env` is used by the root `docker-compose.yml`. Native processes read
 environment variables directly unless their component explicitly loads an env
 file.
 
+When using Docker Compose, recreate affected containers after any `.env` change;
+running containers do not reload environment variables automatically:
+
+```bash
+docker compose up -d --force-recreate hub
+```
+
 Hub variables:
 
 | Variable | Default | Purpose |
@@ -224,6 +314,9 @@ Hub variables:
 | `PFG_HUB_PORT` | `8080` | Host port used by root Docker Compose |
 | `PFG_POSTGRES_PORT` | `5432` | Host port for the dev PostgreSQL container |
 | `PORT` | `8080` | Hub HTTP port inside the Node process |
+| `HTTPS_ENABLED` | `false` | Enable local HTTPS when certificates exist |
+| `HTTPS_CERT_PATH` | `./certs/hub.pfg.local.pem` | Local mkcert certificate path |
+| `HTTPS_KEY_PATH` | `./certs/hub.pfg.local-key.pem` | Local mkcert private key path |
 | `DATABASE_URL` | local postgres URL | Hub PostgreSQL connection string |
 | `ADMIN_KEY` | empty | Admin token required by `/seed/**` |
 | `GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |

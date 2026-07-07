@@ -22,6 +22,9 @@ const runner: Runner = {
 
 const config: AppConfig = {
   port: 8080,
+  httpsEnabled: false,
+  httpsCertPath: "./certs/hub.pfg.local.pem",
+  httpsKeyPath: "./certs/hub.pfg.local-key.pem",
   databaseUrl: "postgresql://test",
   githubToken: "test-github-token",
   adminKey: "test-admin-key",
