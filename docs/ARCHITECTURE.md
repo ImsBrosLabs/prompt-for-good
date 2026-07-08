@@ -190,11 +190,11 @@ retries, contribution logging, stats, manual GitHub seeding, OpenAPI docs and
 unit/service tests. The remaining work is mainly about turning that backend MVP
 into a production/public hub.
 
-1. **GitHub ingestion hardening**
-   - Scheduled and manual discovery exist today, including pagination limits,
-     recrawls, backoff, rate-limit handling and ingestion logs.
-   - Continue hardening the ingestion against GitHub edge cases and tune the
-     discovery limits from real usage data.
+1. **GitHub ingestion tuning**
+   - Scheduled and manual discovery, pagination limits, recrawls, backoff,
+     rate-limit handling and ingestion logs are already implemented.
+   - Continue tuning discovery limits from real usage data and harden against
+     additional GitHub edge cases as they appear.
 
 2. **Stronger scoring**
    - Expand repository scoring beyond stars to include CI, tests and recent
