@@ -126,6 +126,8 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/stats"]).toBeDefined();
     expect(response.body.paths["/seed/default"]).toBeDefined();
     expect(response.body.paths["/seed/repo"]).toBeDefined();
+    expect(response.body.paths["/seed/discover"]).toBeDefined();
+    expect(response.body.paths["/seed/ingestion-runs"]).toBeDefined();
     expect(response.body.components.securitySchemes.RunnerToken.name).toBe(
       "X-Runner-Token",
     );
@@ -148,6 +150,12 @@ describeDb("hub e2e", () => {
       { AdminToken: [] },
     ]);
     expect(response.body.paths["/seed/repo"].post.security).toEqual([
+      { AdminToken: [] },
+    ]);
+    expect(response.body.paths["/seed/discover"].post.security).toEqual([
+      { AdminToken: [] },
+    ]);
+    expect(response.body.paths["/seed/ingestion-runs"].get.security).toEqual([
       { AdminToken: [] },
     ]);
   });
@@ -604,6 +612,11 @@ describeDb("hub e2e", () => {
       .set("X-Admin-Token", "wrong-admin-token")
       .query({ owner: "nodejs", name: "node" })
       .expect(401);
+    await request(app.getHttpServer()).get("/seed/ingestion-runs").expect(401);
+    await request(app.getHttpServer())
+      .get("/seed/ingestion-runs")
+      .set("X-Admin-Token", "wrong-admin-token")
+      .expect(401);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await countRows("repos")).toBe(0);
@@ -820,8 +833,19 @@ describeDb("hub e2e", () => {
       recrawledRepos: 0,
       createdIssues: 2,
       skippedPullRequests: 0,
+      failedRepositories: 0,
     });
     expect(response.body.runId).toEqual(expect.any(String));
+    expect(response.body.details.labels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "good first issue",
+          pages: 2,
+          repositoryHits: 2,
+          skippedPullRequests: 1,
+        }),
+      ]),
+    );
 
     expect(await countRows("repos")).toBe(2);
     expect(await countRows("issues")).toBe(2);
@@ -838,8 +862,145 @@ describeDb("hub e2e", () => {
       recrawledRepos: 0,
       createdIssues: 2,
       skippedPullRequests: 0,
+      failedRepositories: 0,
     });
+    expect(run.details).toEqual(
+      expect.objectContaining({
+        repositories: expect.arrayContaining([
+          expect.objectContaining({
+            owner: "acme",
+            name: "project",
+            action: "seeded",
+          }),
+        ]),
+      }),
+    );
     expect(run.finishedAt).toBeInstanceOf(Date);
+
+    const runsResponse = await request(app.getHttpServer())
+      .get("/seed/ingestion-runs")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(runsResponse.body[0]).toMatchObject({
+      id: response.body.runId,
+      status: "SUCCESS",
+      discoveredRepos: 2,
+      failedRepositories: 0,
+    });
+    expect(runsResponse.body[0].startedAt).toEqual(expect.any(String));
+    expect(runsResponse.body[0].details.repositories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          owner: "acme",
+          name: "project",
+          action: "seeded",
+        }),
+      ]),
+    );
+  });
+
+  it("records partial success when one discovered repository fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request): Promise<Response> => {
+        const requestUrl = new URL(String(url));
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("good first issue")
+        ) {
+          return jsonResponse({
+            items: [
+              {
+                repository_url: "https://api.github.com/repos/acme/missing",
+              },
+              {
+                repository_url: "https://api.github.com/repos/acme/healthy",
+              },
+            ],
+          });
+        }
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("help wanted")
+        ) {
+          return jsonResponse({ items: [] });
+        }
+
+        if (requestUrl.pathname === "/repos/acme/missing") {
+          return jsonResponse({ message: "not found" }, false, {}, 404);
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy") {
+          return jsonResponse({
+            stargazers_count: 100,
+            language: "TypeScript",
+          });
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy/issues") {
+          return jsonResponse([
+            {
+              id: 4001,
+              title: "Qualified healthy issue",
+              body: "Expected actual reproduce ".repeat(20),
+              html_url: "https://github.com/acme/healthy/issues/1",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+            },
+          ]);
+        }
+
+        return jsonResponse({ message: "not found" }, false);
+      }),
+    );
+
+    const response = await request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      discoveredRepos: 2,
+      seededRepos: 1,
+      createdIssues: 1,
+      failedRepositories: 1,
+    });
+
+    const [run] = await db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, response.body.runId as string))
+      .limit(1);
+    expect(run).toMatchObject({
+      status: "PARTIAL_SUCCESS",
+      discoveredRepos: 2,
+      seededRepos: 1,
+      createdIssues: 1,
+      failedRepositories: 1,
+    });
+    expect(run.details).toEqual(
+      expect.objectContaining({
+        repositories: expect.arrayContaining([
+          expect.objectContaining({
+            owner: "acme",
+            name: "missing",
+            action: "failed",
+            statusCode: 404,
+          }),
+          expect.objectContaining({
+            owner: "acme",
+            name: "healthy",
+            action: "seeded",
+          }),
+        ]),
+      }),
+    );
   });
 
   it("records rate-limited ingestion runs", async () => {

@@ -1,6 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 export const issueStatuses = ["PENDING", "CLAIMED", "DONE", "FAILED"] as const;
+export const ingestionRunStatuses = [
+  "STARTED",
+  "SUCCESS",
+  "PARTIAL_SUCCESS",
+  "FAILED",
+  "RATE_LIMITED",
+] as const;
 
 export class RegisterRequestDto {
   @ApiProperty({
@@ -195,6 +202,101 @@ export class StatsResponseDto {
 
   @ApiPropertyOptional({ example: 5, format: "int64", type: Number })
   activeRunners?: number;
+}
+
+export class IngestionRunDto {
+  @ApiPropertyOptional({ description: "Ingestion run UUID", type: String })
+  id?: string;
+
+  @ApiPropertyOptional({
+    description: "Ingestion run status",
+    enum: ingestionRunStatuses,
+    type: String,
+  })
+  status?: (typeof ingestionRunStatuses)[number];
+
+  @ApiPropertyOptional({ example: 12, format: "int32", type: Number })
+  discoveredRepos?: number;
+
+  @ApiPropertyOptional({ example: 8, format: "int32", type: Number })
+  seededRepos?: number;
+
+  @ApiPropertyOptional({ example: 3, format: "int32", type: Number })
+  recrawledRepos?: number;
+
+  @ApiPropertyOptional({ example: 24, format: "int32", type: Number })
+  createdIssues?: number;
+
+  @ApiPropertyOptional({ example: 2, format: "int32", type: Number })
+  skippedPullRequests?: number;
+
+  @ApiPropertyOptional({ example: 1, format: "int32", type: Number })
+  failedRepositories?: number;
+
+  @ApiPropertyOptional({
+    description: "Structured per-label, per-repository and rate-limit details",
+    type: Object,
+  })
+  details?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: "Error message for failed or rate-limited runs",
+    nullable: true,
+    type: String,
+  })
+  errorMessage?: string | null;
+
+  @ApiPropertyOptional({
+    description: "Timestamp when the ingestion run started (ISO-8601)",
+    format: "date-time",
+    type: String,
+  })
+  startedAt?: string;
+
+  @ApiPropertyOptional({
+    description: "Timestamp when the ingestion run finished (ISO-8601)",
+    format: "date-time",
+    nullable: true,
+    type: String,
+  })
+  finishedAt?: string | null;
+}
+
+export class GitHubDiscoveryResultDto {
+  @ApiPropertyOptional({
+    description: "Labels searched during discovery",
+    example: ["good first issue", "help wanted"],
+    isArray: true,
+    type: String,
+  })
+  searchedLabels?: string[];
+
+  @ApiPropertyOptional({ example: 12, format: "int32", type: Number })
+  discoveredRepos?: number;
+
+  @ApiPropertyOptional({ example: 8, format: "int32", type: Number })
+  seededRepos?: number;
+
+  @ApiPropertyOptional({ example: 3, format: "int32", type: Number })
+  recrawledRepos?: number;
+
+  @ApiPropertyOptional({ example: 24, format: "int32", type: Number })
+  createdIssues?: number;
+
+  @ApiPropertyOptional({ example: 2, format: "int32", type: Number })
+  skippedPullRequests?: number;
+
+  @ApiPropertyOptional({ example: 1, format: "int32", type: Number })
+  failedRepositories?: number;
+
+  @ApiPropertyOptional({
+    description: "Structured per-label, per-repository and rate-limit details",
+    type: Object,
+  })
+  details?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: "Ingestion run UUID", type: String })
+  runId?: string;
 }
 
 export class HealthResponseDto {

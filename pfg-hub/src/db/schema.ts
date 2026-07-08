@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -14,6 +15,7 @@ export const contributionStatuses = ["SUCCESS", "FAILED"] as const;
 export const ingestionRunStatuses = [
   "STARTED",
   "SUCCESS",
+  "PARTIAL_SUCCESS",
   "FAILED",
   "RATE_LIMITED",
 ] as const;
@@ -112,6 +114,11 @@ export const ingestionRuns = pgTable(
     recrawledRepos: integer("recrawled_repos").notNull().default(0),
     createdIssues: integer("created_issues").notNull().default(0),
     skippedPullRequests: integer("skipped_pull_requests").notNull().default(0),
+    failedRepositories: integer("failed_repositories").notNull().default(0),
+    details: jsonb("details")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     errorMessage: text("error_message"),
     startedAt: timestamp("started_at", { mode: "date" }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { mode: "date" }),

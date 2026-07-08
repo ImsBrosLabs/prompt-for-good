@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -15,6 +16,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from "@nestjs/swagger";
+import { GitHubDiscoveryResultDto, IngestionRunDto } from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
 import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
 
@@ -84,7 +86,10 @@ export class SeedController {
     description:
       "Searches GitHub for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
   })
-  @ApiOkResponse({ description: "Repository discovery completed" })
+  @ApiOkResponse({
+    description: "Repository discovery completed",
+    type: GitHubDiscoveryResultDto,
+  })
   @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
   @ApiResponse({
     status: 502,
@@ -93,5 +98,37 @@ export class SeedController {
   /** Discovers candidate repositories from GitHub issue search. */
   async discoverRepos(): Promise<GitHubDiscoveryResult & { runId: string }> {
     return this.githubService.runIngestion();
+  }
+
+  @Get("ingestion-runs")
+  @ApiOperation({
+    summary: "List recent GitHub ingestion runs",
+    description:
+      "Returns recent scheduled or manual GitHub ingestion runs with counters, status, errors and structured diagnostic details. Requires a valid X-Admin-Token header.",
+  })
+  @ApiQuery({
+    name: "limit",
+    required: false,
+    example: 20,
+    description: "Maximum number of runs to return, clamped to 1-100",
+  })
+  @ApiOkResponse({
+    description: "Recent ingestion runs",
+    isArray: true,
+    type: IngestionRunDto,
+  })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  /** Lists recent GitHub ingestion audit runs. */
+  async listIngestionRuns(
+    @Query("limit") limit?: string,
+  ): Promise<IngestionRunDto[]> {
+    const runs = await this.githubService.listIngestionRuns(
+      Number(limit ?? 20),
+    );
+    return runs.map((run) => ({
+      ...run,
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+    }));
   }
 }

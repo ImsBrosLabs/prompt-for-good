@@ -27,6 +27,7 @@ POST /runners/{id}/heartbeat   → runner signals it is alive
 POST /seed/repo                → admin seeds a single GitHub repository
 POST /seed/default             → admin seeds the default demo repository
 POST /seed/discover            → admin runs GitHub repository discovery
+GET  /seed/ingestion-runs      → admin reads recent ingestion diagnostics
 GET  /stats                    → contribution dashboard data
 ```
 
@@ -35,8 +36,8 @@ GET  /stats                    → contribution dashboard data
 repos         (id, github_url, owner, name, language, stars, eligible, last_crawled_at)
 issues        (id, repo_id, github_id, title, score, status, claimed_by, claimed_at)
 runners       (id, token, contributor_name, quota_remaining_today, last_seen_at, active)
-contributions (id, issue_id, runner_id, pr_url, status, created_at)
-ingestion_runs (id, status, discovered_repos, seeded_repos, recrawled_repos, created_issues)
+contributions  (id, issue_id, runner_id, pr_url, status, created_at)
+ingestion_runs (id, status, discovered_repos, seeded_repos, recrawled_repos, created_issues, failed_repositories, details)
 ```
 
 **Issue status lifecycle:**
@@ -191,8 +192,9 @@ unit/service tests. The remaining work is mainly about turning that backend MVP
 into a production/public hub.
 
 1. **GitHub ingestion tuning**
-   - Scheduled and manual discovery, pagination limits, recrawls, backoff,
-     rate-limit handling and ingestion logs are already implemented.
+   - Scheduled and manual discovery, pagination limits, recrawls,
+     partial-success runs, backoff, rate-limit handling, ingestion logs and
+     `GET /seed/ingestion-runs` diagnostics are already implemented.
    - Continue tuning discovery limits from real usage data and harden against
      additional GitHub edge cases as they appear.
 

@@ -57,10 +57,18 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     recrawled_repos INT NOT NULL DEFAULT 0,
     created_issues INT NOT NULL DEFAULT 0,
     skipped_pull_requests INT NOT NULL DEFAULT 0,
+    failed_repositories INT NOT NULL DEFAULT 0,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
     error_message TEXT,
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at TIMESTAMP
 );
+
+ALTER TABLE ingestion_runs
+    ADD COLUMN IF NOT EXISTS failed_repositories INT NOT NULL DEFAULT 0;
+
+ALTER TABLE ingestion_runs
+    ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_score ON issues(score);
