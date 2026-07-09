@@ -1,7 +1,9 @@
 import {
+  ConflictException,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   OnApplicationBootstrap,
   OnApplicationShutdown,
 } from "@nestjs/common";
@@ -9,6 +11,7 @@ import { SchedulerRegistry } from "@nestjs/schedule";
 import { CronJob } from "cron";
 import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { APP_CONFIG, AppConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import {
@@ -119,6 +122,7 @@ export class GitHubService
   private readonly logger = new Logger(GitHubService.name);
   private readonly ingestionCronName = "github-ingestion";
   private ingestionRunning = false;
+  private activeIngestionRunId: string | null = null;
   private readonly rateLimitRemainingByResource = new Map<
     GitHubRateLimitResource,
     number
@@ -146,7 +150,7 @@ export class GitHubService
     const job = CronJob.from({
       cronTime: this.config.githubIngestionCron,
       onTick: () => {
-        void this.runIngestion().catch((error) => {
+        void this.startIngestion().catch((error) => {
           this.logger.error(
             error instanceof Error ? error.message : "GitHub ingestion failed",
           );
@@ -181,6 +185,21 @@ export class GitHubService
       .from(ingestionRuns)
       .orderBy(desc(ingestionRuns.startedAt))
       .limit(safeLimit);
+  }
+
+  /** Returns one ingestion audit run for admin diagnostics. */
+  async getIngestionRun(runId: string): Promise<IngestionRun> {
+    const [run] = await this.db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, runId))
+      .limit(1);
+
+    if (!run) {
+      throw new NotFoundException("Ingestion run not found");
+    }
+
+    return run;
   }
 
   /** Imports a GitHub repository once and crawls it when it passes eligibility. */
@@ -269,20 +288,23 @@ export class GitHubService
     };
   }
 
-  /** Runs discovery and recrawls stale known repositories with an audit row. */
-  async runIngestion(): Promise<GitHubDiscoveryResult & { runId: string }> {
+  /** Starts discovery and recrawls stale known repositories in the background. */
+  async startIngestion(): Promise<{ runId: string; status: "STARTED" }> {
     if (this.ingestionRunning) {
       this.logger.warn(
         "GitHub ingestion skipped because a run is already active",
       );
-      throw new Error("GitHub ingestion already running");
+      throw new ConflictException({
+        error: "GitHub ingestion already running",
+        activeRunId: this.activeIngestionRunId,
+      });
     }
 
     this.ingestionRunning = true;
     const runId = randomUUID();
+    this.activeIngestionRunId = runId;
     this.rateLimitRemainingByResource.clear();
     this.rateLimitResetAtByResource.clear();
-    const details = this.createIngestionDetails();
     this.logger.log(`GitHub ingestion run ${runId} started`);
 
     await this.db.insert(ingestionRuns).values({
@@ -290,6 +312,48 @@ export class GitHubService
       status: "STARTED",
       startedAt: new Date(),
     });
+
+    void this.finishIngestion(runId).catch((error) => {
+      this.logger.error(
+        error instanceof Error ? error.message : "GitHub ingestion failed",
+      );
+    });
+
+    return { runId, status: "STARTED" };
+  }
+
+  /** Runs discovery and recrawls stale known repositories with an audit row. */
+  async runIngestion(): Promise<GitHubDiscoveryResult & { runId: string }> {
+    const { runId } = await this.startIngestion();
+
+    while (true) {
+      const run = await this.getIngestionRun(runId);
+      if (run.status !== "STARTED") {
+        if (run.status === "SUCCESS" || run.status === "PARTIAL_SUCCESS") {
+          return {
+            searchedLabels: Array.isArray(
+              (run.details as GitHubIngestionDetails | null)?.labels,
+            )
+              ? this.discoveryLabels
+              : [...this.discoveryLabels],
+            discoveredRepos: run.discoveredRepos,
+            seededRepos: run.seededRepos,
+            recrawledRepos: run.recrawledRepos,
+            createdIssues: run.createdIssues,
+            skippedPullRequests: run.skippedPullRequests,
+            failedRepositories: run.failedRepositories,
+            details: run.details as GitHubIngestionDetails,
+            runId,
+          };
+        }
+        throw new Error(run.errorMessage ?? "GitHub ingestion failed");
+      }
+      await sleep(25);
+    }
+  }
+
+  private async finishIngestion(runId: string): Promise<void> {
+    const details = this.createIngestionDetails();
 
     try {
       const result = await this.discoverRepositories(details);
@@ -314,7 +378,6 @@ export class GitHubService
       this.logger.log(
         `GitHub ingestion run ${runId} ${status.toLowerCase()} discoveredRepos=${result.discoveredRepos} seededRepos=${result.seededRepos} recrawledRepos=${result.recrawledRepos} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests} failedRepositories=${result.failedRepositories}`,
       );
-      return { ...result, runId };
     } catch (error) {
       const status: IngestionRunStatus =
         error instanceof GitHubRateLimitError ? "RATE_LIMITED" : "FAILED";
@@ -335,9 +398,9 @@ export class GitHubService
           finishedAt: new Date(),
         })
         .where(eq(ingestionRuns.id, runId));
-      throw error;
     } finally {
       this.ingestionRunning = false;
+      this.activeIngestionRunId = null;
     }
   }
 

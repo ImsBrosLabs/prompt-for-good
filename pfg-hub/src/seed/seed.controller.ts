@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
   Post,
   Query,
   UseGuards,
@@ -18,7 +19,7 @@ import {
 } from "@nestjs/swagger";
 import { GitHubDiscoveryResultDto, IngestionRunDto } from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
-import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
+import { GitHubService } from "../github/github.service";
 
 @Controller("seed")
 @UseGuards(AdminTokenGuard)
@@ -95,9 +96,9 @@ export class SeedController {
     status: 502,
     description: "GitHub API unreachable or rate-limited",
   })
-  /** Discovers candidate repositories from GitHub issue search. */
-  async discoverRepos(): Promise<GitHubDiscoveryResult & { runId: string }> {
-    return this.githubService.runIngestion();
+  /** Queues candidate repository discovery from GitHub issue search. */
+  async discoverRepos(): Promise<{ runId: string; status: "STARTED" }> {
+    return this.githubService.startIngestion();
   }
 
   @Get("ingestion-runs")
@@ -130,5 +131,26 @@ export class SeedController {
       startedAt: run.startedAt.toISOString(),
       finishedAt: run.finishedAt?.toISOString() ?? null,
     }));
+  }
+  @Get("ingestion-runs/:id")
+  @ApiOperation({
+    summary: "Get a GitHub ingestion run",
+    description:
+      "Returns one scheduled or manual GitHub ingestion run with counters, status, errors and structured diagnostic details. Requires a valid X-Admin-Token header.",
+  })
+  @ApiOkResponse({
+    description: "Ingestion run",
+    type: IngestionRunDto,
+  })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  @ApiResponse({ status: 404, description: "Ingestion run not found" })
+  /** Gets one GitHub ingestion audit run. */
+  async getIngestionRun(@Param("id") id: string): Promise<IngestionRunDto> {
+    const run = await this.githubService.getIngestionRun(id);
+    return {
+      ...run,
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+    };
   }
 }

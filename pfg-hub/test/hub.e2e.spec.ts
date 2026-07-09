@@ -7,6 +7,7 @@ import {
 import { Test } from "@nestjs/testing";
 import { eq } from "drizzle-orm";
 import { Pool } from "pg";
+import { setTimeout as sleep } from "node:timers/promises";
 import request from "supertest";
 import {
   afterAll,
@@ -128,6 +129,7 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/seed/repo"]).toBeDefined();
     expect(response.body.paths["/seed/discover"]).toBeDefined();
     expect(response.body.paths["/seed/ingestion-runs"]).toBeDefined();
+    expect(response.body.paths["/seed/ingestion-runs/{id}"]).toBeDefined();
     expect(response.body.components.securitySchemes.RunnerToken.name).toBe(
       "X-Runner-Token",
     );
@@ -826,35 +828,12 @@ describeDb("hub e2e", () => {
       .set("X-Admin-Token", adminToken)
       .expect(200);
 
-    expect(response.body).toMatchObject({
-      searchedLabels: ["good first issue", "help wanted"],
-      discoveredRepos: 2,
-      seededRepos: 2,
-      recrawledRepos: 0,
-      createdIssues: 2,
-      skippedPullRequests: 0,
-      failedRepositories: 0,
+    expect(response.body).toEqual({
+      runId: expect.any(String),
+      status: "STARTED",
     });
-    expect(response.body.runId).toEqual(expect.any(String));
-    expect(response.body.details.labels).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: "good first issue",
-          pages: 2,
-          repositoryHits: 2,
-          skippedPullRequests: 1,
-        }),
-      ]),
-    );
 
-    expect(await countRows("repos")).toBe(2);
-    expect(await countRows("issues")).toBe(2);
-
-    const [run] = await db
-      .select()
-      .from(ingestionRuns)
-      .where(eq(ingestionRuns.id, response.body.runId as string))
-      .limit(1);
+    const run = await waitForIngestionRun(response.body.runId as string);
     expect(run).toMatchObject({
       status: "SUCCESS",
       discoveredRepos: 2,
@@ -877,6 +856,33 @@ describeDb("hub e2e", () => {
     );
     expect(run.finishedAt).toBeInstanceOf(Date);
 
+    const runResponse = await request(app.getHttpServer())
+      .get(`/seed/ingestion-runs/${response.body.runId}`)
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(runResponse.body).toMatchObject({
+      id: response.body.runId,
+      status: "SUCCESS",
+      discoveredRepos: 2,
+      seededRepos: 2,
+      createdIssues: 2,
+      failedRepositories: 0,
+    });
+    expect(runResponse.body.details.labels).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "good first issue",
+          pages: 2,
+          repositoryHits: 2,
+          skippedPullRequests: 1,
+        }),
+      ]),
+    );
+
+    expect(await countRows("repos")).toBe(2);
+    expect(await countRows("issues")).toBe(2);
+
     const runsResponse = await request(app.getHttpServer())
       .get("/seed/ingestion-runs")
       .set("X-Admin-Token", adminToken)
@@ -898,6 +904,55 @@ describeDb("hub e2e", () => {
         }),
       ]),
     );
+  });
+
+  it("returns 404 for an unknown ingestion run", async () => {
+    await request(app.getHttpServer())
+      .get("/seed/ingestion-runs/00000000-0000-0000-0000-000000000000")
+      .set("X-Admin-Token", adminToken)
+      .expect(404);
+  });
+
+  it("rejects concurrent discovery requests with the active run id", async () => {
+    let releaseSearch!: () => void;
+    const searchGate = new Promise<void>((resolve) => {
+      releaseSearch = resolve;
+    });
+    const fetchMock = vi.fn(
+      async (url: string | URL | Request): Promise<Response> => {
+        const requestUrl = new URL(String(url));
+        if (requestUrl.pathname === "/search/issues") {
+          await searchGate;
+          return jsonResponse({ items: [] });
+        }
+        return jsonResponse({ message: "not found" }, false);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const firstRequest = request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken);
+
+    const firstResponse = await firstRequest.expect(200);
+    expect(firstResponse.body).toEqual({
+      runId: expect.any(String),
+      status: "STARTED",
+    });
+
+    const conflictResponse = await request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken)
+      .expect(409);
+
+    expect(conflictResponse.body).toMatchObject({
+      error: "GitHub ingestion already running",
+      activeRunId: firstResponse.body.runId,
+    });
+
+    releaseSearch();
+    const run = await waitForIngestionRun(firstResponse.body.runId as string);
+    expect(run.status).toBe("SUCCESS");
   });
 
   it("records partial success when one discovered repository fails", async () => {
@@ -965,18 +1020,12 @@ describeDb("hub e2e", () => {
       .set("X-Admin-Token", adminToken)
       .expect(200);
 
-    expect(response.body).toMatchObject({
-      discoveredRepos: 2,
-      seededRepos: 1,
-      createdIssues: 1,
-      failedRepositories: 1,
+    expect(response.body).toEqual({
+      runId: expect.any(String),
+      status: "STARTED",
     });
 
-    const [run] = await db
-      .select()
-      .from(ingestionRuns)
-      .where(eq(ingestionRuns.id, response.body.runId as string))
-      .limit(1);
+    const run = await waitForIngestionRun(response.body.runId as string);
     expect(run).toMatchObject({
       status: "PARTIAL_SUCCESS",
       discoveredRepos: 2,
@@ -1019,11 +1068,14 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(500);
+      .expect(200);
 
-    expect(response.body.error).toBe("GitHub API rate-limited with 403");
+    expect(response.body).toEqual({
+      runId: expect.any(String),
+      status: "STARTED",
+    });
 
-    const [run] = await db.select().from(ingestionRuns).limit(1);
+    const run = await waitForIngestionRun(response.body.runId as string);
     expect(run).toMatchObject({
       status: "RATE_LIMITED",
       errorMessage: "GitHub API rate-limited with 403",
@@ -1079,6 +1131,25 @@ describeDb("hub e2e", () => {
       createdAt,
       updatedAt: input.updatedAt ?? createdAt,
     });
+  }
+
+  async function waitForIngestionRun(
+    runId: string,
+    timeoutMs = 2000,
+  ): Promise<typeof ingestionRuns.$inferSelect> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const [run] = await db
+        .select()
+        .from(ingestionRuns)
+        .where(eq(ingestionRuns.id, runId))
+        .limit(1);
+      if (run && run.status !== "STARTED") {
+        return run;
+      }
+      await sleep(25);
+    }
+    throw new Error(`Timed out waiting for ingestion run ${runId} to finish`);
   }
 
   async function truncateDb(): Promise<void> {
