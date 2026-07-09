@@ -289,15 +289,7 @@ export class GitHubService
   async enqueueIngestion(): Promise<{ runId: string }> {
     const { runId, details } = await this.startIngestionRun();
     const ingestionPromise = this.executeIngestion(runId, details);
-    void ingestionPromise.catch((error) => {
-      void this.persistFailedIngestionRun(runId, details, error).catch(
-        (persistError) => {
-          this.logger.error(
-            `GitHub ingestion run ${runId} failed and could not persist final failure state error=${this.errorMessage(persistError)}`,
-          );
-        },
-      );
-    });
+    void ingestionPromise.catch(() => undefined);
     return { runId };
   }
 

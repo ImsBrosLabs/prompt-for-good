@@ -155,6 +155,9 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/seed/discover"].post.security).toEqual([
       { AdminToken: [] },
     ]);
+    expect(
+      response.body.paths["/seed/discover"].post.responses["202"],
+    ).toBeDefined();
     expect(response.body.paths["/seed/ingestion-runs"].get.security).toEqual([
       { AdminToken: [] },
     ]);
@@ -824,37 +827,17 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(200);
+      .expect(202);
 
-    expect(response.body).toMatchObject({
-      searchedLabels: ["good first issue", "help wanted"],
-      discoveredRepos: 2,
-      seededRepos: 2,
-      recrawledRepos: 0,
-      createdIssues: 2,
-      skippedPullRequests: 0,
-      failedRepositories: 0,
-    });
-    expect(response.body.runId).toEqual(expect.any(String));
-    expect(response.body.details.labels).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: "good first issue",
-          pages: 2,
-          repositoryHits: 2,
-          skippedPullRequests: 1,
-        }),
-      ]),
+    expect(response.body).toEqual({ runId: expect.any(String) });
+
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
     );
 
     expect(await countRows("repos")).toBe(2);
     expect(await countRows("issues")).toBe(2);
 
-    const [run] = await db
-      .select()
-      .from(ingestionRuns)
-      .where(eq(ingestionRuns.id, response.body.runId as string))
-      .limit(1);
     expect(run).toMatchObject({
       status: "SUCCESS",
       discoveredRepos: 2,
@@ -866,6 +849,14 @@ describeDb("hub e2e", () => {
     });
     expect(run.details).toEqual(
       expect.objectContaining({
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            label: "good first issue",
+            pages: 2,
+            repositoryHits: 2,
+            skippedPullRequests: 1,
+          }),
+        ]),
         repositories: expect.arrayContaining([
           expect.objectContaining({
             owner: "acme",
@@ -963,20 +954,13 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(200);
+      .expect(202);
 
-    expect(response.body).toMatchObject({
-      discoveredRepos: 2,
-      seededRepos: 1,
-      createdIssues: 1,
-      failedRepositories: 1,
-    });
+    expect(response.body).toEqual({ runId: expect.any(String) });
 
-    const [run] = await db
-      .select()
-      .from(ingestionRuns)
-      .where(eq(ingestionRuns.id, response.body.runId as string))
-      .limit(1);
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
+    );
     expect(run).toMatchObject({
       status: "PARTIAL_SUCCESS",
       discoveredRepos: 2,
@@ -1019,11 +1003,13 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(500);
+      .expect(202);
 
-    expect(response.body.error).toBe("GitHub API rate-limited with 403");
+    expect(response.body).toEqual({ runId: expect.any(String) });
 
-    const [run] = await db.select().from(ingestionRuns).limit(1);
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
+    );
     expect(run).toMatchObject({
       status: "RATE_LIMITED",
       errorMessage: "GitHub API rate-limited with 403",
@@ -1094,6 +1080,26 @@ describeDb("hub e2e", () => {
       `SELECT count(*)::int FROM ${table}`,
     );
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async function waitForCompletedIngestionRun(runId: string) {
+    const deadline = Date.now() + 3000;
+
+    while (Date.now() < deadline) {
+      const [run] = await db
+        .select()
+        .from(ingestionRuns)
+        .where(eq(ingestionRuns.id, runId))
+        .limit(1);
+
+      if (run && run.status !== "STARTED") {
+        return run;
+      }
+
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+    }
+
+    throw new Error(`Timed out waiting for ingestion run ${runId}`);
   }
 });
 

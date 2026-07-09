@@ -26,7 +26,7 @@ POST /runners/register         → register a new runner
 POST /runners/{id}/heartbeat   → runner signals it is alive
 POST /seed/repo                → admin seeds a single GitHub repository
 POST /seed/default             → admin seeds the default demo repository
-POST /seed/discover            → admin runs GitHub repository discovery
+POST /seed/discover            → admin starts GitHub repository discovery
 GET  /seed/ingestion-runs      → admin reads recent ingestion diagnostics
 GET  /stats                    → contribution dashboard data
 ```

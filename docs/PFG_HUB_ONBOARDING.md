@@ -298,10 +298,12 @@ POST /seed/repo?owner=nodejs&name=node
   -> insert qualifying issues as PENDING
 ```
 
-`POST /seed/discover` searches GitHub issue labels, seeds discovered
+`POST /seed/discover` starts background GitHub issue-label discovery and returns
+an ingestion `runId`. The run searches GitHub issue labels, seeds discovered
 repositories, recrawls stale known repositories and records an `ingestion_runs`
-audit row. The run stores aggregate counters plus JSON diagnostics for labels,
-repository outcomes, warnings and rate-limit snapshots.
+audit row. Poll `GET /seed/ingestion-runs/:runId` for aggregate counters plus
+JSON diagnostics for labels, repository outcomes, warnings and rate-limit
+snapshots.
 
 `GET /seed/ingestion-runs` returns recent ingestion runs for admin diagnostics.
 Runs with isolated repository failures are recorded as `PARTIAL_SUCCESS`; hard

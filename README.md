@@ -270,7 +270,7 @@ Current endpoints:
 | `POST` | `/issues/:id/done` | `X-Runner-Token` | Report success or failure |
 | `POST` | `/seed/default` | `X-Admin-Token` | Seed the default demo repository |
 | `POST` | `/seed/repo` | `X-Admin-Token` | Seed one GitHub repository |
-| `POST` | `/seed/discover` | `X-Admin-Token` | Discover repositories from GitHub issue search |
+| `POST` | `/seed/discover` | `X-Admin-Token` | Start background repository discovery from GitHub issue search |
 | `GET` | `/seed/ingestion-runs` | `X-Admin-Token` | List recent GitHub ingestion runs and diagnostics |
 
 Example runner flow:
@@ -296,15 +296,20 @@ curl -X POST http://localhost:8080/seed/repo \
 Example ingestion audit:
 
 ```bash
+curl -s -X POST http://localhost:8080/seed/discover \
+  -H 'X-Admin-Token: dev-admin-key'
+
 curl -s http://localhost:8080/seed/ingestion-runs \
   -H 'X-Admin-Token: dev-admin-key'
 ```
 
-Manual and scheduled GitHub discovery records an `ingestion_runs` row with
-aggregate counters plus JSON details for searched labels, repository seed or
-recrawl results, warnings and GitHub rate-limit snapshots. If some repositories
-fail but the run can continue, the run is stored as `PARTIAL_SUCCESS`; hard
-GitHub quota exhaustion is stored as `RATE_LIMITED`.
+Manual and scheduled GitHub discovery starts in the background and records an
+`ingestion_runs` row. `POST /seed/discover` returns the `runId`; poll
+`GET /seed/ingestion-runs/:runId` for aggregate counters plus JSON details for
+searched labels, repository seed or recrawl results, warnings and GitHub
+rate-limit snapshots. If some repositories fail but the run can continue, the
+run is stored as `PARTIAL_SUCCESS`; hard GitHub quota exhaustion is stored as
+`RATE_LIMITED`.
 
 ---
 

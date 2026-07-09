@@ -299,6 +299,16 @@ export class GitHubDiscoveryResultDto {
   runId?: string;
 }
 
+export class IngestionRunStartedDto {
+  @ApiProperty({
+    description:
+      "Ingestion run UUID. Poll GET /seed/ingestion-runs/{runId} for completion.",
+    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    type: String,
+  })
+  runId!: string;
+}
+
 export class HealthResponseDto {
   @ApiProperty({ example: "UP", type: String })
   status!: string;
