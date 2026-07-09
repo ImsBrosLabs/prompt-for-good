@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IssueDifficulty, RunnerPreferences } from "../db/schema";
 
 export const issueStatuses = ["PENDING", "CLAIMED", "DONE", "FAILED"] as const;
 export const ingestionRunStatuses = [
@@ -8,6 +9,33 @@ export const ingestionRunStatuses = [
   "FAILED",
   "RATE_LIMITED",
 ] as const;
+export const issueDifficulties = ["easy", "medium", "hard"] as const;
+
+export class RunnerPreferencesDto implements RunnerPreferences {
+  @ApiPropertyOptional({ example: ["owner/repo"], type: [String] })
+  allowedRepos?: string[];
+
+  @ApiPropertyOptional({ example: ["owner/repo-to-avoid"], type: [String] })
+  blockedRepos?: string[];
+
+  @ApiPropertyOptional({ example: ["typescript", "python"], type: [String] })
+  languages?: string[];
+
+  @ApiPropertyOptional({ example: ["npm", "pip"], type: [String] })
+  ecosystems?: string[];
+
+  @ApiPropertyOptional({ example: ["MIT", "Apache-2.0"], type: [String] })
+  licenses?: string[];
+
+  @ApiPropertyOptional({ example: ["bug", "good first issue"], type: [String] })
+  labels?: string[];
+
+  @ApiPropertyOptional({ enum: issueDifficulties, type: String })
+  maxDifficulty?: IssueDifficulty;
+
+  @ApiPropertyOptional({ example: 120, format: "int32", type: Number })
+  maxEstimatedMinutes?: number;
+}
 
 export class RegisterRequestDto {
   @ApiProperty({
@@ -16,6 +44,13 @@ export class RegisterRequestDto {
     type: String,
   })
   contributorName!: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Work-selection criteria persisted for preference-aware dispatch",
+    type: RunnerPreferencesDto,
+  })
+  preferences?: RunnerPreferences;
 }
 
 export class RegisterResponseDto {
@@ -43,6 +78,12 @@ export class HeartbeatRequestDto {
     type: Number,
   })
   quotaRemainingToday!: number;
+
+  @ApiPropertyOptional({
+    description: "Optional replacement work-selection criteria for this runner",
+    type: RunnerPreferencesDto,
+  })
+  preferences?: RunnerPreferences;
 }
 
 export class DoneRequestDto {
@@ -129,6 +170,21 @@ export class IssueDto {
     type: Number,
   })
   score?: number;
+
+  @ApiPropertyOptional({
+    description: "Estimated implementation difficulty",
+    enum: issueDifficulties,
+    type: String,
+  })
+  difficulty?: IssueDifficulty;
+
+  @ApiPropertyOptional({
+    description: "Estimated implementation time in minutes",
+    example: 90,
+    format: "int32",
+    type: Number,
+  })
+  estimatedMinutes?: number;
 
   @ApiPropertyOptional({
     description: "Lifecycle state of an issue in the queue",

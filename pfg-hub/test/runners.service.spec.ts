@@ -15,6 +15,7 @@ const runner: Runner = {
   quotaRemainingToday: 0,
   lastSeenAt: null,
   active: true,
+  preferences: {},
   createdAt: new Date("2026-01-01T00:00:00Z"),
 };
 
@@ -119,9 +120,9 @@ describe("RunnersService", () => {
   // belongs to that exact runner id.
   it("requires the heartbeat runner to exist and own the token", async () => {
     const missing = new RunnersService(createRunnerDb([]).db);
-    await expect(missing.heartbeat("runner-1", "token-1", 10)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      missing.heartbeat("runner-1", "token-1", 10),
+    ).rejects.toBeInstanceOf(NotFoundException);
 
     const wrongToken = new RunnersService(createRunnerDb([runner]).db);
     await expect(

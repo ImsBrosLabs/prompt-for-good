@@ -12,8 +12,16 @@ import { DATABASE, Database } from "../db/database.module";
 import { contributions, Issue, issues, repos } from "../db/schema";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
 import { RunnersService } from "../runners/runners.service";
+import { ScoringService } from "../scoring/scoring.service";
 
 type IssueWithRepo = Issue & { repoUrl: string };
+type DispatchIssue = IssueWithRepo & {
+  owner: string;
+  name: string;
+  language: string | null;
+  ecosystems: string[];
+  license: string | null;
+};
 
 @Injectable()
 export class IssuesService {
@@ -21,22 +29,51 @@ export class IssuesService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(RunnersService)
     private readonly runnersService: RunnersService,
+    @Inject(ScoringService)
+    private readonly scoringService: ScoringService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  /** Returns the highest-priority pending issue available to a valid runner. */
+  /** Returns the highest-affinity pending issue available to a valid runner. */
   async getNextIssue(runnerToken: string): Promise<IssueDto | null> {
-    await this.runnersService.validateToken(runnerToken);
+    const runner = await this.runnersService.validateToken(runnerToken);
 
-    const [row] = await this.db
-      .select({ issue: issues, repoUrl: repos.githubUrl })
+    const rows = await this.db
+      .select({
+        issue: issues,
+        repoUrl: repos.githubUrl,
+        owner: repos.owner,
+        name: repos.name,
+        language: repos.language,
+        ecosystems: repos.ecosystems,
+        license: repos.license,
+      })
       .from(issues)
       .innerJoin(repos, eq(issues.repoId, repos.id))
       .where(eq(issues.status, "PENDING"))
-      .orderBy(desc(issues.score), asc(issues.createdAt))
-      .limit(1);
+      .orderBy(desc(issues.score), asc(issues.createdAt));
 
-    return row ? this.toDto({ ...row.issue, repoUrl: row.repoUrl }) : null;
+    const matching = rows
+      .map((row) => {
+        const issue = { ...row.issue, ...row } as DispatchIssue;
+        const affinity = this.scoringService.matchRunnerPreferences(
+          issue,
+          runner.preferences,
+        );
+        return affinity === null ? null : { issue, affinity };
+      })
+      .filter(
+        (candidate): candidate is { issue: DispatchIssue; affinity: number } =>
+          candidate !== null,
+      )
+      .sort(
+        (left, right) =>
+          right.affinity - left.affinity ||
+          right.issue.score - left.issue.score ||
+          left.issue.createdAt.getTime() - right.issue.createdAt.getTime(),
+      );
+
+    return matching[0] ? this.toDto(matching[0].issue) : null;
   }
 
   /** Atomically assigns a pending issue to the authenticated runner. */
@@ -141,6 +178,8 @@ export class IssuesService {
       repoUrl: issue.repoUrl,
       labels: issue.labels ?? "",
       score: issue.score,
+      difficulty: issue.difficulty,
+      estimatedMinutes: issue.estimatedMinutes,
       status: issue.status,
       claimedBy: issue.claimedBy,
       claimedAt: issue.claimedAt?.toISOString() ?? null,

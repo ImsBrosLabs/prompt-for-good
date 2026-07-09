@@ -236,6 +236,39 @@ describe("GitHubService discovery limits", () => {
 
     expect(delayMs).toBe(3000);
   });
+
+  it("detects CI, tests and supported ecosystems from the repository tree", async () => {
+    const service = createService();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            tree: [
+              { path: ".github/workflows/checks.yml", type: "blob" },
+              { path: "src/widget.spec.ts", type: "blob" },
+              { path: "package.json", type: "blob" },
+              { path: "pyproject.toml", type: "blob" },
+            ],
+          },
+          { "x-ratelimit-remaining": "100" },
+        ),
+      ),
+    );
+
+    const signals = await callInspectRepository(
+      service,
+      "acme",
+      "project",
+      "main",
+    );
+
+    expect(signals).toEqual({
+      ciDetected: true,
+      testsDetected: true,
+      ecosystems: ["npm", "pip"],
+    });
+  });
 });
 
 function createService(config: Partial<AppConfig> = {}): GitHubService {
@@ -245,6 +278,27 @@ function createService(config: Partial<AppConfig> = {}): GitHubService {
     { ...baseConfig, ...config },
     {} as never,
   );
+}
+
+function callInspectRepository(
+  service: GitHubService,
+  owner: string,
+  name: string,
+  branch: string,
+) {
+  return (
+    service as unknown as {
+      inspectRepository: (
+        owner: string,
+        name: string,
+        branch: string,
+      ) => Promise<{
+        ciDetected: boolean;
+        testsDetected: boolean;
+        ecosystems: string[];
+      }>;
+    }
+  ).inspectRepository(owner, name, branch);
 }
 
 function jsonResponse(

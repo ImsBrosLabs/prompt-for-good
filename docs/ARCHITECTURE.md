@@ -191,14 +191,7 @@ retries, contribution logging, stats, manual GitHub seeding, OpenAPI docs and
 unit/service tests. The remaining work is mainly about turning that backend MVP
 into a production/public hub.
 
-1. **GitHub ingestion tuning**
-   - Scheduled and manual discovery, pagination limits, recrawls,
-     partial-success runs, backoff, rate-limit handling, ingestion logs and
-     `GET /seed/ingestion-runs` diagnostics are already implemented.
-   - Continue tuning discovery limits from real usage data and harden against
-     additional GitHub edge cases as they appear.
-
-2. **Stronger scoring**
+1. **Stronger scoring**
    - Expand repository scoring beyond stars to include CI, tests and recent
      activity.
    - Expand issue scoring with scope estimation, difficulty tiers and stronger
@@ -206,13 +199,13 @@ into a production/public hub.
    - Evolve the current `score desc, created_at asc` dispatch order into
      preference-aware matching.
 
-3. **Queue robustness**
+2. **Queue robustness**
    - Reclaim or fail stale `CLAIMED` issues after a timeout.
    - Account for runner quota when dispatching work.
    - Mark runners inactive when heartbeat freshness expires.
    - Prevent duplicate GitHub issues across recrawls and repository records.
 
-4. **Runner project preferences**
+3. **Runner project preferences**
    - Let runners declare project selection criteria instead of receiving any
      globally eligible issue.
    - Support preferences such as allowed/blocked repositories, languages,
@@ -223,22 +216,22 @@ into a production/public hub.
    - Expose the same preferences in the runner configuration file so
      contributors can control which projects their local quota may work on.
 
-5. **Runtime API validation**
+4. **Runtime API validation**
    - Add structured request validation for DTOs.
    - Validate PR URLs, non-negative token counts, non-negative quota values and
      required completion fields.
 
-6. **Production security**
+5. **Production security**
    - Replace static admin-token authentication with scoped bearer auth such as
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-7. **Dashboard and missing API surface**
+6. **Dashboard and missing API surface**
    - Build the public hub dashboard for repositories, issues, pull requests,
      contributors, runners and token usage.
    - Add the documented `GET /repos` endpoint.
 
-8. **Operations and deployment**
+7. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.

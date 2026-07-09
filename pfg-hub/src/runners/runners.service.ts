@@ -8,14 +8,22 @@ import {
 import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DATABASE, Database } from "../db/database.module";
-import { Runner, runners } from "../db/schema";
+import {
+  IssueDifficulty,
+  Runner,
+  RunnerPreferences,
+  runners,
+} from "../db/schema";
 
 @Injectable()
 export class RunnersService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
   /** Creates a runner identity and its long-lived authentication token. */
-  async register(contributorName: string): Promise<Runner> {
+  async register(
+    contributorName: string,
+    preferences?: RunnerPreferences,
+  ): Promise<Runner> {
     if (!contributorName?.trim()) {
       throw new BadRequestException("Missing or invalid contributor name");
     }
@@ -27,6 +35,7 @@ export class RunnersService {
         token: randomUUID(),
         contributorName: contributorName.trim(),
         active: true,
+        preferences: this.normalizePreferences(preferences),
       })
       .returning();
 
@@ -38,6 +47,7 @@ export class RunnersService {
     id: string,
     token: string,
     quotaRemaining: number,
+    preferences?: RunnerPreferences,
   ): Promise<void> {
     const [runner] = await this.db
       .select()
@@ -54,6 +64,9 @@ export class RunnersService {
         quotaRemainingToday: quotaRemaining,
         lastSeenAt: new Date(),
         active: true,
+        ...(preferences === undefined
+          ? {}
+          : { preferences: this.normalizePreferences(preferences) }),
       })
       .where(eq(runners.id, id));
   }
@@ -70,5 +83,43 @@ export class RunnersService {
     if (!runner) throw new UnauthorizedException("Invalid runner token");
 
     return runner;
+  }
+
+  private normalizePreferences(
+    preferences: RunnerPreferences | undefined,
+  ): RunnerPreferences {
+    if (!preferences) return {};
+    const maxDifficulty = this.normalizeDifficulty(preferences.maxDifficulty);
+    const maxEstimatedMinutes = Number.isFinite(preferences.maxEstimatedMinutes)
+      ? Math.max(0, Math.floor(preferences.maxEstimatedMinutes!))
+      : undefined;
+
+    return {
+      allowedRepos: this.normalizeList(preferences.allowedRepos),
+      blockedRepos: this.normalizeList(preferences.blockedRepos),
+      languages: this.normalizeList(preferences.languages),
+      ecosystems: this.normalizeList(preferences.ecosystems),
+      licenses: this.normalizeList(preferences.licenses),
+      labels: this.normalizeList(preferences.labels),
+      ...(maxDifficulty ? { maxDifficulty } : {}),
+      ...(maxEstimatedMinutes !== undefined ? { maxEstimatedMinutes } : {}),
+    };
+  }
+
+  private normalizeList(values: string[] | undefined): string[] {
+    if (!Array.isArray(values)) return [];
+    return [
+      ...new Set(
+        values.map((value) => value.trim().toLowerCase()).filter(Boolean),
+      ),
+    ];
+  }
+
+  private normalizeDifficulty(
+    value: IssueDifficulty | undefined,
+  ): IssueDifficulty | undefined {
+    return value === "easy" || value === "medium" || value === "hard"
+      ? value
+      : undefined;
   }
 }

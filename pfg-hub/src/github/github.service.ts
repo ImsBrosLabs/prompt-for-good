@@ -25,9 +25,16 @@ type GitHubRepoResponse = {
   stargazers_count: number;
   language?: string | null;
   full_name?: string;
+  default_branch?: string;
+  pushed_at?: string | null;
+  license?: { spdx_id?: string | null } | null;
   archived?: boolean;
   disabled?: boolean;
   has_issues?: boolean;
+};
+
+type GitHubTreeResponse = {
+  tree?: Array<{ path?: string; type?: string }>;
 };
 
 type GitHubIssueResponse = {
@@ -245,13 +252,31 @@ export class GitHubService
     }
 
     const stars = Number(repoData.stargazers_count ?? 0);
+    const repositorySignals = await this.inspectRepository(
+      canonicalRepo.owner,
+      canonicalRepo.name,
+      repoData.default_branch ?? "HEAD",
+    );
+    const lastPushedAt = this.parseGitHubDate(repoData.pushed_at);
+    const repoScore = this.scoringService.scoreRepo({
+      stars,
+      ciDetected: repositorySignals.ciDetected,
+      testsDetected: repositorySignals.testsDetected,
+      lastPushedAt,
+    });
     const hasIssues = repoData.has_issues ?? true;
     const repositoryActive =
       !repoData.archived && !repoData.disabled && hasIssues;
     const eligible =
-      repositoryActive && this.scoringService.isRepoEligible({ stars });
+      repositoryActive &&
+      this.scoringService.isRepoEligible({
+        stars,
+        ciDetected: repositorySignals.ciDetected,
+        testsDetected: repositorySignals.testsDetected,
+        lastPushedAt,
+      });
     this.logger.log(
-      `Fetched GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} stars=${stars} language=${repoData.language ?? "unknown"} archived=${repoData.archived ?? false} disabled=${repoData.disabled ?? false} hasIssues=${hasIssues} eligible=${eligible}`,
+      `Fetched GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} stars=${stars} score=${repoScore} ci=${repositorySignals.ciDetected} tests=${repositorySignals.testsDetected} pushedAt=${lastPushedAt?.toISOString() ?? "unknown"} language=${repoData.language ?? "unknown"} archived=${repoData.archived ?? false} disabled=${repoData.disabled ?? false} hasIssues=${hasIssues} eligible=${eligible}`,
     );
 
     const [repo] = await this.db
@@ -262,6 +287,12 @@ export class GitHubService
         owner: canonicalRepo.owner,
         name: canonicalRepo.name,
         language: repoData.language ?? null,
+        ecosystems: repositorySignals.ecosystems,
+        license: repoData.license?.spdx_id ?? null,
+        ciDetected: repositorySignals.ciDetected,
+        testsDetected: repositorySignals.testsDetected,
+        lastPushedAt,
+        score: repoScore,
         stars,
         eligible,
       })
@@ -574,13 +605,14 @@ export class GitHubService
         .map((label) => label.name)
         .filter(Boolean)
         .join(",");
-      const candidate: Pick<Issue, "labels" | "body"> = {
+      const candidate: Pick<Issue, "labels" | "body"> & { title: string } = {
+        title: item.title,
         labels,
         body: item.body ?? null,
       };
-      const score = this.scoringService.scoreIssue(candidate);
+      const assessment = this.scoringService.assessIssue(candidate);
 
-      if (score >= this.config.issueMinScore) {
+      if (assessment.score >= this.config.issueMinScore) {
         await this.db.insert(issues).values({
           id: randomUUID(),
           repoId: repo.id,
@@ -589,7 +621,9 @@ export class GitHubService
           body: item.body ?? null,
           githubUrl: item.html_url,
           labels,
-          score,
+          score: assessment.score,
+          difficulty: assessment.difficulty,
+          estimatedMinutes: assessment.estimatedMinutes,
           status: "PENDING",
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -609,6 +643,90 @@ export class GitHubService
       `Crawled GitHub issues for ${repo.owner}/${repo.name} fetchedIssues=${result.fetchedIssues} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests} skippedExistingIssues=${result.skippedExistingIssues} skippedLowScoreIssues=${result.skippedLowScoreIssues}`,
     );
     return result;
+  }
+
+  /** Inspects a repository tree once to identify CI, test and ecosystem signals. */
+  private async inspectRepository(
+    owner: string,
+    name: string,
+    branch: string,
+  ): Promise<{
+    ciDetected: boolean;
+    testsDetected: boolean;
+    ecosystems: string[];
+  }> {
+    const tree = await this.githubRequest<GitHubTreeResponse>(
+      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+    );
+    const paths = (tree.tree ?? [])
+      .filter((entry) => entry.type === "blob" && entry.path)
+      .map((entry) => entry.path!.toLowerCase());
+
+    return {
+      ciDetected: paths.some((path) =>
+        this.matchesPath(path, [
+          ".github/workflows/",
+          ".circleci/",
+          ".gitlab-ci.yml",
+          "azure-pipelines",
+          "jenkinsfile",
+          ".travis.yml",
+        ]),
+      ),
+      testsDetected: paths.some((path) =>
+        this.matchesPath(path, [
+          "/test/",
+          "/tests/",
+          "/__tests__/",
+          ".test.",
+          ".spec.",
+          "test_",
+          "_test.",
+        ]),
+      ),
+      ecosystems: this.detectEcosystems(paths),
+    };
+  }
+
+  private detectEcosystems(paths: string[]): string[] {
+    const ecosystems = new Set<string>();
+    for (const path of paths) {
+      if (
+        this.matchesPath(path, ["package.json", "pnpm-lock.yaml", "yarn.lock"])
+      ) {
+        ecosystems.add("npm");
+      }
+      if (
+        this.matchesPath(path, [
+          "pyproject.toml",
+          "requirements.txt",
+          "setup.py",
+          "pipfile",
+        ])
+      ) {
+        ecosystems.add("pip");
+      }
+      if (this.matchesPath(path, ["cargo.toml"])) ecosystems.add("cargo");
+      if (this.matchesPath(path, ["go.mod"])) ecosystems.add("go");
+      if (
+        this.matchesPath(path, ["pom.xml", "build.gradle", "build.gradle.kts"])
+      ) {
+        ecosystems.add("maven");
+      }
+      if (this.matchesPath(path, ["composer.json"])) ecosystems.add("composer");
+      if (this.matchesPath(path, ["gemfile"])) ecosystems.add("bundler");
+    }
+    return [...ecosystems].sort();
+  }
+
+  private matchesPath(path: string, markers: string[]): boolean {
+    return markers.some((marker) => path === marker || path.includes(marker));
+  }
+
+  private parseGitHubDate(value: string | null | undefined): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   private async recrawlKnownRepositories(

@@ -55,7 +55,10 @@ export class RunnersController {
   async registerRunner(
     @Body() request: RegisterRequestDto,
   ): Promise<RegisterResponseDto> {
-    const runner = await this.runnersService.register(request.contributorName);
+    const runner = await this.runnersService.register(
+      request.contributorName,
+      request.preferences,
+    );
     return { runnerId: runner.id, token: runner.token };
   }
 
@@ -83,6 +86,7 @@ export class RunnersController {
       id,
       runnerToken,
       body.quotaRemainingToday,
+      body.preferences,
     );
   }
 }
