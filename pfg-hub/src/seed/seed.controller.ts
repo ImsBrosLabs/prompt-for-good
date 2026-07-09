@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  ApiAcceptedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -16,9 +17,9 @@ import {
   ApiSecurity,
   ApiTags,
 } from "@nestjs/swagger";
-import { GitHubDiscoveryResultDto, IngestionRunDto } from "../openapi/dtos";
+import { GitHubDiscoveryQueuedDto, IngestionRunDto } from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
-import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
+import { GitHubService } from "../github/github.service";
 
 @Controller("seed")
 @UseGuards(AdminTokenGuard)
@@ -80,15 +81,15 @@ export class SeedController {
   }
 
   @Post("discover")
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: "Discover repositories from GitHub issues",
     description:
-      "Searches GitHub for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
+      "Queues a background search for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
   })
-  @ApiOkResponse({
-    description: "Repository discovery completed",
-    type: GitHubDiscoveryResultDto,
+  @ApiAcceptedResponse({
+    description: "Repository discovery queued",
+    type: GitHubDiscoveryQueuedDto,
   })
   @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
   @ApiResponse({
@@ -96,8 +97,8 @@ export class SeedController {
     description: "GitHub API unreachable or rate-limited",
   })
   /** Discovers candidate repositories from GitHub issue search. */
-  async discoverRepos(): Promise<GitHubDiscoveryResult & { runId: string }> {
-    return this.githubService.runIngestion();
+  async discoverRepos(): Promise<GitHubDiscoveryQueuedDto> {
+    return this.githubService.enqueueIngestion();
   }
 
   @Get("ingestion-runs")

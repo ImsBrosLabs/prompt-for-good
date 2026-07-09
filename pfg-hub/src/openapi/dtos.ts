@@ -262,6 +262,19 @@ export class IngestionRunDto {
   finishedAt?: string | null;
 }
 
+export class GitHubDiscoveryQueuedDto {
+  @ApiProperty({ description: "Ingestion run UUID", type: String })
+  runId!: string;
+
+  @ApiProperty({
+    description: "Initial status for a queued GitHub discovery run",
+    enum: ["STARTED"],
+    example: "STARTED",
+    type: String,
+  })
+  status!: "STARTED";
+}
+
 export class GitHubDiscoveryResultDto {
   @ApiPropertyOptional({
     description: "Labels searched during discovery",

@@ -1,5 +1,6 @@
 import {
   Inject,
+  ConflictException,
   Injectable,
   Logger,
   OnApplicationBootstrap,
@@ -269,27 +270,57 @@ export class GitHubService
     };
   }
 
+  /** Queues discovery and recrawls stale known repositories in the background. */
+  async enqueueIngestion(): Promise<{ runId: string; status: "STARTED" }> {
+    const runId = await this.startIngestionRun();
+
+    void this.executeIngestionRun(runId).catch((error) => {
+      this.logger.error(
+        `Background GitHub ingestion run ${runId} failed error=${error instanceof Error ? error.message : "Unknown ingestion error"}`,
+      );
+    });
+
+    return { runId, status: "STARTED" };
+  }
+
   /** Runs discovery and recrawls stale known repositories with an audit row. */
   async runIngestion(): Promise<GitHubDiscoveryResult & { runId: string }> {
+    const runId = await this.startIngestionRun();
+    return this.executeIngestionRun(runId);
+  }
+
+  private async startIngestionRun(): Promise<string> {
     if (this.ingestionRunning) {
       this.logger.warn(
         "GitHub ingestion skipped because a run is already active",
       );
-      throw new Error("GitHub ingestion already running");
+      throw new ConflictException("GitHub ingestion already running");
     }
 
     this.ingestionRunning = true;
     const runId = randomUUID();
     this.rateLimitRemainingByResource.clear();
     this.rateLimitResetAtByResource.clear();
-    const details = this.createIngestionDetails();
     this.logger.log(`GitHub ingestion run ${runId} started`);
 
-    await this.db.insert(ingestionRuns).values({
-      id: runId,
-      status: "STARTED",
-      startedAt: new Date(),
-    });
+    try {
+      await this.db.insert(ingestionRuns).values({
+        id: runId,
+        status: "STARTED",
+        startedAt: new Date(),
+      });
+    } catch (error) {
+      this.ingestionRunning = false;
+      throw error;
+    }
+
+    return runId;
+  }
+
+  private async executeIngestionRun(
+    runId: string,
+  ): Promise<GitHubDiscoveryResult & { runId: string }> {
+    const details = this.createIngestionDetails();
 
     try {
       const result = await this.discoverRepositories(details);
@@ -322,6 +353,7 @@ export class GitHubService
       details.warnings.push(
         error instanceof Error ? error.message : "Unknown ingestion error",
       );
+      const counters = this.ingestionCountersFromDetails(details);
       this.logger.error(
         `GitHub ingestion run ${runId} ${status.toLowerCase()} error=${error instanceof Error ? error.message : "Unknown ingestion error"}`,
       );
@@ -329,6 +361,7 @@ export class GitHubService
         .update(ingestionRuns)
         .set({
           status,
+          ...counters,
           errorMessage:
             error instanceof Error ? error.message : "Unknown ingestion error",
           details,
@@ -339,6 +372,34 @@ export class GitHubService
     } finally {
       this.ingestionRunning = false;
     }
+  }
+
+  private ingestionCountersFromDetails(
+    details: GitHubIngestionDetails,
+  ): Omit<GitHubDiscoveryResult, "searchedLabels" | "details"> {
+    return {
+      discoveredRepos: new Set(
+        details.repositories.map((repo) => `${repo.owner}/${repo.name}`),
+      ).size,
+      seededRepos: details.repositories.filter(
+        (repo) => repo.action === "seeded",
+      ).length,
+      recrawledRepos: details.repositories.filter(
+        (repo) =>
+          repo.action === "recrawled" || repo.action === "recrawl_failed",
+      ).length,
+      createdIssues: details.repositories.reduce(
+        (sum, repo) => sum + (repo.createdIssues ?? 0),
+        0,
+      ),
+      skippedPullRequests: details.labels.reduce(
+        (sum, label) => sum + label.skippedPullRequests,
+        0,
+      ),
+      failedRepositories: details.repositories.filter(
+        (repo) => repo.action === "failed" || repo.action === "recrawl_failed",
+      ).length,
+    };
   }
 
   /** Discovers repositories from qualified open GitHub issues, then seeds them. */
