@@ -4,6 +4,8 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
+  Param,
   Post,
   Query,
   UseGuards,
@@ -18,6 +20,7 @@ import {
 } from "@nestjs/swagger";
 import { GitHubDiscoveryResultDto, IngestionRunDto } from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
+import { IngestionRun } from "../db/schema";
 import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
 
 @Controller("seed")
@@ -125,10 +128,37 @@ export class SeedController {
     const runs = await this.githubService.listIngestionRuns(
       Number(limit ?? 20),
     );
-    return runs.map((run) => ({
+    return runs.map((run) => this.toIngestionRunDto(run));
+  }
+
+  @Get("ingestion-runs/:runId")
+  @ApiOperation({
+    summary: "Get a GitHub ingestion run",
+    description:
+      "Returns one GitHub ingestion run with its current or completed counters, details, timestamps and error information. Requires a valid X-Admin-Token header.",
+  })
+  @ApiOkResponse({
+    description: "Ingestion run found",
+    type: IngestionRunDto,
+  })
+  @ApiResponse({ status: 404, description: "Ingestion run not found" })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  /** Gets one GitHub ingestion audit run by id. */
+  async getIngestionRun(
+    @Param("runId") runId: string,
+  ): Promise<IngestionRunDto> {
+    const run = await this.githubService.getIngestionRun(runId);
+    if (!run) {
+      throw new NotFoundException("Ingestion run not found");
+    }
+    return this.toIngestionRunDto(run);
+  }
+
+  private toIngestionRunDto(run: IngestionRun): IngestionRunDto {
+    return {
       ...run,
       startedAt: run.startedAt.toISOString(),
       finishedAt: run.finishedAt?.toISOString() ?? null,
-    }));
+    };
   }
 }
