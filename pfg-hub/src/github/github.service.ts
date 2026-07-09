@@ -183,6 +183,16 @@ export class GitHubService
       .limit(safeLimit);
   }
 
+  /** Returns a single ingestion audit run by id for admin diagnostics. */
+  async getIngestionRun(runId: string): Promise<IngestionRun | null> {
+    const [run] = await this.db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, runId))
+      .limit(1);
+    return run ?? null;
+  }
+
   /** Imports a GitHub repository once and crawls it when it passes eligibility. */
   async seedRepo(
     owner: string,
