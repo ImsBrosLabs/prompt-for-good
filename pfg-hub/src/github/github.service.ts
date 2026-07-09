@@ -146,7 +146,7 @@ export class GitHubService
     const job = CronJob.from({
       cronTime: this.config.githubIngestionCron,
       onTick: () => {
-        void this.runIngestion().catch((error) => {
+        void this.enqueueIngestion().catch((error) => {
           this.logger.error(
             error instanceof Error ? error.message : "GitHub ingestion failed",
           );
@@ -271,6 +271,30 @@ export class GitHubService
 
   /** Runs discovery and recrawls stale known repositories with an audit row. */
   async runIngestion(): Promise<GitHubDiscoveryResult & { runId: string }> {
+    const { runId, details } = await this.startIngestionRun();
+    return this.executeIngestion(runId, details);
+  }
+
+  /** Starts a GitHub ingestion run in the background. */
+  async enqueueIngestion(): Promise<{ runId: string }> {
+    const { runId, details } = await this.startIngestionRun();
+    const ingestionPromise = this.executeIngestion(runId, details);
+    void ingestionPromise.catch((error) => {
+      void this.persistFailedIngestionRun(runId, details, error).catch(
+        (persistError) => {
+          this.logger.error(
+            `GitHub ingestion run ${runId} failed and could not persist final failure state error=${this.errorMessage(persistError)}`,
+          );
+        },
+      );
+    });
+    return { runId };
+  }
+
+  private async startIngestionRun(): Promise<{
+    runId: string;
+    details: GitHubIngestionDetails;
+  }> {
     if (this.ingestionRunning) {
       this.logger.warn(
         "GitHub ingestion skipped because a run is already active",
@@ -285,12 +309,24 @@ export class GitHubService
     const details = this.createIngestionDetails();
     this.logger.log(`GitHub ingestion run ${runId} started`);
 
-    await this.db.insert(ingestionRuns).values({
-      id: runId,
-      status: "STARTED",
-      startedAt: new Date(),
-    });
+    try {
+      await this.db.insert(ingestionRuns).values({
+        id: runId,
+        status: "STARTED",
+        startedAt: new Date(),
+      });
+    } catch (error) {
+      this.ingestionRunning = false;
+      throw error;
+    }
 
+    return { runId, details };
+  }
+
+  private async executeIngestion(
+    runId: string,
+    details: GitHubIngestionDetails,
+  ): Promise<GitHubDiscoveryResult & { runId: string }> {
     try {
       const result = await this.discoverRepositories(details);
       result.details.rateLimits = this.githubRateLimitSnapshots();
@@ -316,29 +352,37 @@ export class GitHubService
       );
       return { ...result, runId };
     } catch (error) {
-      const status: IngestionRunStatus =
-        error instanceof GitHubRateLimitError ? "RATE_LIMITED" : "FAILED";
-      details.rateLimits = this.githubRateLimitSnapshots();
-      details.warnings.push(
-        error instanceof Error ? error.message : "Unknown ingestion error",
-      );
-      this.logger.error(
-        `GitHub ingestion run ${runId} ${status.toLowerCase()} error=${error instanceof Error ? error.message : "Unknown ingestion error"}`,
-      );
-      await this.db
-        .update(ingestionRuns)
-        .set({
-          status,
-          errorMessage:
-            error instanceof Error ? error.message : "Unknown ingestion error",
-          details,
-          finishedAt: new Date(),
-        })
-        .where(eq(ingestionRuns.id, runId));
+      await this.persistFailedIngestionRun(runId, details, error);
       throw error;
     } finally {
       this.ingestionRunning = false;
     }
+  }
+
+  private async persistFailedIngestionRun(
+    runId: string,
+    details: GitHubIngestionDetails,
+    error: unknown,
+  ): Promise<void> {
+    const status: IngestionRunStatus =
+      error instanceof GitHubRateLimitError ? "RATE_LIMITED" : "FAILED";
+    const errorMessage = this.errorMessage(error);
+    details.rateLimits = this.githubRateLimitSnapshots();
+    if (!details.warnings.includes(errorMessage)) {
+      details.warnings.push(errorMessage);
+    }
+    this.logger.error(
+      `GitHub ingestion run ${runId} ${status.toLowerCase()} error=${errorMessage}`,
+    );
+    await this.db
+      .update(ingestionRuns)
+      .set({
+        status,
+        errorMessage,
+        details,
+        finishedAt: new Date(),
+      })
+      .where(eq(ingestionRuns.id, runId));
   }
 
   /** Discovers repositories from qualified open GitHub issues, then seeds them. */
