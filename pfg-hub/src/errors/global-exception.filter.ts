@@ -28,6 +28,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     const payload = body as Record<string, unknown>;
     return response.status(status).send({
+      ...payload,
       error: payload.message ?? payload.error ?? "An unexpected error occurred",
     });
   }

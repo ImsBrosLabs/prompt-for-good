@@ -262,6 +262,39 @@ export class IngestionRunDto {
   finishedAt?: string | null;
 }
 
+export class GitHubIngestionStartedDto {
+  @ApiProperty({
+    description: "Ingestion run UUID to poll for completion",
+    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    type: String,
+  })
+  runId!: string;
+
+  @ApiProperty({
+    description: "Queued ingestion status",
+    enum: ["STARTED"],
+    example: "STARTED",
+  })
+  status!: "STARTED";
+}
+
+export class GitHubIngestionConflictDto {
+  @ApiProperty({
+    description: "Conflict error message",
+    example: "GitHub ingestion already running",
+    type: String,
+  })
+  error!: string;
+
+  @ApiPropertyOptional({
+    description: "Currently active ingestion run UUID to poll for completion",
+    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    nullable: true,
+    type: String,
+  })
+  activeRunId?: string | null;
+}
+
 export class GitHubDiscoveryResultDto {
   @ApiPropertyOptional({
     description: "Labels searched during discovery",

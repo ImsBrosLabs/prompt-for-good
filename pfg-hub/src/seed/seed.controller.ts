@@ -17,7 +17,11 @@ import {
   ApiSecurity,
   ApiTags,
 } from "@nestjs/swagger";
-import { GitHubDiscoveryResultDto, IngestionRunDto } from "../openapi/dtos";
+import {
+  GitHubIngestionConflictDto,
+  GitHubIngestionStartedDto,
+  IngestionRunDto,
+} from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
 import { GitHubService } from "../github/github.service";
 
@@ -88,10 +92,15 @@ export class SeedController {
       "Searches GitHub for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
   })
   @ApiOkResponse({
-    description: "Repository discovery completed",
-    type: GitHubDiscoveryResultDto,
+    description: "Repository discovery queued",
+    type: GitHubIngestionStartedDto,
   })
   @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  @ApiResponse({
+    status: 409,
+    description: "GitHub ingestion already running",
+    type: GitHubIngestionConflictDto,
+  })
   @ApiResponse({
     status: 502,
     description: "GitHub API unreachable or rate-limited",
