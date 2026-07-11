@@ -734,10 +734,13 @@ describeDb("hub e2e", () => {
         const requestUrl = String(url);
 
         if (requestUrl.endsWith("/repos/acme/project")) {
-          return jsonResponse({
-            stargazers_count: 100,
-            language: "TypeScript",
-          });
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
+        }
+
+        if (
+          requestUrl.endsWith("/repos/acme/project/git/trees/main?recursive=1")
+        ) {
+          return jsonResponse(eligibleTreeFixture());
         }
 
         if (
@@ -790,7 +793,7 @@ describeDb("hub e2e", () => {
       .query({ owner: "acme", name: "project" })
       .expect(200);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     const [repo] = await db
       .select()
@@ -876,17 +879,18 @@ describeDb("hub e2e", () => {
         }
 
         if (requestUrl.pathname === "/repos/acme/project") {
-          return jsonResponse({
-            stargazers_count: 100,
-            language: "TypeScript",
-          });
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
         }
 
         if (requestUrl.pathname === "/repos/beta/tool") {
-          return jsonResponse({
-            stargazers_count: 90,
-            language: "Python",
-          });
+          return jsonResponse(eligibleRepoFixture("Python", 90));
+        }
+
+        if (
+          requestUrl.pathname === "/repos/acme/project/git/trees/main" ||
+          requestUrl.pathname === "/repos/beta/tool/git/trees/main"
+        ) {
+          return jsonResponse(eligibleTreeFixture());
         }
 
         if (requestUrl.pathname === "/repos/acme/project/issues") {
@@ -1027,10 +1031,11 @@ describeDb("hub e2e", () => {
         }
 
         if (requestUrl.pathname === "/repos/acme/healthy") {
-          return jsonResponse({
-            stargazers_count: 100,
-            language: "TypeScript",
-          });
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy/git/trees/main") {
+          return jsonResponse(eligibleTreeFixture());
         }
 
         if (requestUrl.pathname === "/repos/acme/healthy/issues") {
@@ -1211,6 +1216,25 @@ function restoreEnv(name: string, value: string | undefined): void {
   } else {
     process.env[name] = value;
   }
+}
+
+function eligibleRepoFixture(language: string, stars: number) {
+  return {
+    stargazers_count: stars,
+    language,
+    default_branch: "main",
+    pushed_at: new Date().toISOString(),
+  };
+}
+
+function eligibleTreeFixture() {
+  return {
+    tree: [
+      { path: ".github/workflows/ci.yml", type: "blob" },
+      { path: "src/example.spec.ts", type: "blob" },
+      { path: "package.json", type: "blob" },
+    ],
+  };
 }
 
 function jsonResponse(
