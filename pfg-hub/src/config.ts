@@ -18,6 +18,7 @@ export type AppConfig = {
   githubDiscoveryMaxPagesPerLabel: number;
   githubDiscoveryMaxRepositories: number;
   githubMinRateLimitRemaining: number;
+  corsOrigins: string[];
 };
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
@@ -27,10 +28,8 @@ export function loadConfig(): AppConfig {
   return {
     port: Number(process.env.PORT ?? 8080),
     httpsEnabled: process.env.HTTPS_ENABLED === "true",
-    httpsCertPath:
-      process.env.HTTPS_CERT_PATH ?? "./certs/hub.pfg.local.pem",
-    httpsKeyPath:
-      process.env.HTTPS_KEY_PATH ?? "./certs/hub.pfg.local-key.pem",
+    httpsCertPath: process.env.HTTPS_CERT_PATH ?? "./certs/hub.pfg.local.pem",
+    httpsKeyPath: process.env.HTTPS_KEY_PATH ?? "./certs/hub.pfg.local-key.pem",
     databaseUrl:
       process.env.DATABASE_URL ?? "postgresql://pfg:pfg@localhost:5432/pfg",
     githubToken: process.env.GITHUB_TOKEN ?? "dummy",
@@ -53,6 +52,12 @@ export function loadConfig(): AppConfig {
     githubMinRateLimitRemaining: Number(
       process.env.GITHUB_MIN_RATE_LIMIT_REMAINING ?? 5,
     ),
+    corsOrigins: (
+      process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173"
+    )
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
   };
 }
 

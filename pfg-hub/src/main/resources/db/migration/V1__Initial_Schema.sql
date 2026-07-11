@@ -4,6 +4,11 @@ CREATE TABLE IF NOT EXISTS repos (
     owner VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     language VARCHAR(100),
+    ecosystems JSONB NOT NULL DEFAULT '[]'::jsonb,
+    license VARCHAR(100),
+    ci_detected BOOLEAN NOT NULL DEFAULT FALSE,
+    tests_detected BOOLEAN NOT NULL DEFAULT FALSE,
+    last_pushed_at TIMESTAMP,
     score INT NOT NULL DEFAULT 0,
     stars INT NOT NULL DEFAULT 0,
     eligible BOOLEAN NOT NULL DEFAULT FALSE,
@@ -20,6 +25,8 @@ CREATE TABLE IF NOT EXISTS issues (
     github_url VARCHAR(255) NOT NULL,
     labels VARCHAR(255),
     score INT NOT NULL DEFAULT 0,
+    difficulty VARCHAR(20) NOT NULL DEFAULT 'medium',
+    estimated_minutes INT NOT NULL DEFAULT 90,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     claimed_by VARCHAR(36),
     claimed_at TIMESTAMP,
@@ -35,6 +42,7 @@ CREATE TABLE IF NOT EXISTS runners (
     quota_remaining_today BIGINT NOT NULL DEFAULT 0,
     last_seen_at TIMESTAMP,
     active BOOLEAN NOT NULL DEFAULT TRUE,
+    preferences JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -57,10 +65,42 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
     recrawled_repos INT NOT NULL DEFAULT 0,
     created_issues INT NOT NULL DEFAULT 0,
     skipped_pull_requests INT NOT NULL DEFAULT 0,
+    failed_repositories INT NOT NULL DEFAULT 0,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
     error_message TEXT,
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finished_at TIMESTAMP
 );
+
+ALTER TABLE ingestion_runs
+    ADD COLUMN IF NOT EXISTS failed_repositories INT NOT NULL DEFAULT 0;
+
+ALTER TABLE ingestion_runs
+    ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE repos
+    ADD COLUMN IF NOT EXISTS ecosystems JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE repos
+    ADD COLUMN IF NOT EXISTS license VARCHAR(100);
+
+ALTER TABLE repos
+    ADD COLUMN IF NOT EXISTS ci_detected BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE repos
+    ADD COLUMN IF NOT EXISTS tests_detected BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE repos
+    ADD COLUMN IF NOT EXISTS last_pushed_at TIMESTAMP;
+
+ALTER TABLE issues
+    ADD COLUMN IF NOT EXISTS difficulty VARCHAR(20) NOT NULL DEFAULT 'medium';
+
+ALTER TABLE issues
+    ADD COLUMN IF NOT EXISTS estimated_minutes INT NOT NULL DEFAULT 90;
+
+ALTER TABLE runners
+    ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_score ON issues(score);

@@ -45,4 +45,14 @@ describe("loadConfig", () => {
       httpsKeyPath: "./custom/key.pem",
     });
   });
+
+  it("parses a comma-separated CORS origin allowlist", () => {
+    process.env.CORS_ORIGINS =
+      " https://admin.example.com, http://localhost:5173 ";
+
+    expect(loadConfig().corsOrigins).toEqual([
+      "https://admin.example.com",
+      "http://localhost:5173",
+    ]);
+  });
 });

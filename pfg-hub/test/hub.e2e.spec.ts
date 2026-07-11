@@ -79,6 +79,11 @@ describeDb("hub e2e", () => {
       new FastifyAdapter(),
     );
     app.useGlobalFilters(new GlobalExceptionFilter());
+    app.enableCors({
+      origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+      credentials: true,
+      allowedHeaders: ["Content-Type", "X-Admin-Token"],
+    });
     configureOpenApi(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -124,8 +129,15 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/issues/{id}/claim"]).toBeDefined();
     expect(response.body.paths["/issues/{id}/done"]).toBeDefined();
     expect(response.body.paths["/stats"]).toBeDefined();
+    expect(response.body.paths["/admin/session"]).toBeDefined();
+    expect(response.body.paths["/admin/repositories"]).toBeDefined();
+    expect(response.body.paths["/admin/issues"]).toBeDefined();
+    expect(response.body.paths["/admin/runners"]).toBeDefined();
+    expect(response.body.paths["/admin/contributions"]).toBeDefined();
     expect(response.body.paths["/seed/default"]).toBeDefined();
     expect(response.body.paths["/seed/repo"]).toBeDefined();
+    expect(response.body.paths["/seed/discover"]).toBeDefined();
+    expect(response.body.paths["/seed/ingestion-runs"]).toBeDefined();
     expect(response.body.components.securitySchemes.RunnerToken.name).toBe(
       "X-Runner-Token",
     );
@@ -150,6 +162,107 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/seed/repo"].post.security).toEqual([
       { AdminToken: [] },
     ]);
+    expect(response.body.paths["/seed/discover"].post.security).toEqual([
+      { AdminToken: [] },
+    ]);
+    expect(
+      response.body.paths["/seed/discover"].post.responses["202"],
+    ).toBeDefined();
+    expect(response.body.paths["/seed/ingestion-runs"].get.security).toEqual([
+      { AdminToken: [] },
+    ]);
+  });
+
+  it("serves authenticated React-admin lists with filters and safe runner fields", async () => {
+    const runner = await registerRunner("alice");
+    await db
+      .update(runners)
+      .set({
+        quotaRemainingToday: 500,
+        lastSeenAt: new Date("2026-02-02T10:00:00Z"),
+      })
+      .where(eq(runners.id, runner.runnerId));
+    await seedRepo({
+      id: "repo-low",
+      githubUrl: "https://github.com/acme/legacy",
+      owner: "acme",
+      name: "legacy",
+      stars: 10,
+      eligible: false,
+    });
+    await seedRepo({
+      id: "repo-1",
+      githubUrl: "https://github.com/acme/project",
+      owner: "acme",
+      name: "project",
+      stars: 100,
+      eligible: true,
+    });
+    await seedIssue({ id: "issue-1", githubId: 42, title: "Fix admin data" });
+    await db.insert(contributions).values({
+      id: "contribution-1",
+      issueId: "issue-1",
+      runnerId: runner.runnerId,
+      prUrl: "https://github.com/acme/project/pull/1",
+      status: "SUCCESS",
+      tokensUsed: 250,
+    });
+
+    await request(app.getHttpServer()).get("/admin/session").expect(401);
+
+    const sessionResponse = await request(app.getHttpServer())
+      .get("/admin/session")
+      .set("X-Admin-Token", adminToken)
+      .set("Origin", "http://localhost:5173")
+      .expect("access-control-allow-origin", "http://localhost:5173")
+      .expect(200);
+    expect(sessionResponse.body).toEqual({ authenticated: true });
+
+    const repositoriesResponse = await request(app.getHttpServer())
+      .get("/admin/repositories")
+      .set("X-Admin-Token", adminToken)
+      .query({
+        sort: JSON.stringify(["stars", "DESC"]),
+        range: JSON.stringify([0, 0]),
+        filter: JSON.stringify({ q: "acme" }),
+      })
+      .expect(200);
+    expect(repositoriesResponse.body).toMatchObject({
+      total: 2,
+      data: [{ id: "repo-1", name: "project", stars: 100 }],
+    });
+
+    const issuesResponse = await request(app.getHttpServer())
+      .get("/admin/issues")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ status: "PENDING", q: "admin" }) })
+      .expect(200);
+    expect(issuesResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: "issue-1", githubUrl: expect.any(String) }],
+    });
+
+    const runnersResponse = await request(app.getHttpServer())
+      .get("/admin/runners")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ active: true }) })
+      .expect(200);
+    expect(runnersResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: runner.runnerId, contributorName: "alice" }],
+    });
+    expect(runnersResponse.body.data[0]).not.toHaveProperty("token");
+    expect(runnersResponse.body.data[0]).not.toHaveProperty("preferences");
+
+    const contributionsResponse = await request(app.getHttpServer())
+      .get("/admin/contributions")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ status: "SUCCESS" }) })
+      .expect(200);
+    expect(contributionsResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: "contribution-1", tokensUsed: 250 }],
+    });
   });
 
   it("registers a runner through the HTTP API and persists only trimmed public input", async () => {
@@ -604,6 +717,11 @@ describeDb("hub e2e", () => {
       .set("X-Admin-Token", "wrong-admin-token")
       .query({ owner: "nodejs", name: "node" })
       .expect(401);
+    await request(app.getHttpServer()).get("/seed/ingestion-runs").expect(401);
+    await request(app.getHttpServer())
+      .get("/seed/ingestion-runs")
+      .set("X-Admin-Token", "wrong-admin-token")
+      .expect(401);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await countRows("repos")).toBe(0);
@@ -616,10 +734,13 @@ describeDb("hub e2e", () => {
         const requestUrl = String(url);
 
         if (requestUrl.endsWith("/repos/acme/project")) {
-          return jsonResponse({
-            stargazers_count: 100,
-            language: "TypeScript",
-          });
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
+        }
+
+        if (
+          requestUrl.endsWith("/repos/acme/project/git/trees/main?recursive=1")
+        ) {
+          return jsonResponse(eligibleTreeFixture());
         }
 
         if (
@@ -672,7 +793,7 @@ describeDb("hub e2e", () => {
       .query({ owner: "acme", name: "project" })
       .expect(200);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     const [repo] = await db
       .select()
@@ -758,17 +879,18 @@ describeDb("hub e2e", () => {
         }
 
         if (requestUrl.pathname === "/repos/acme/project") {
-          return jsonResponse({
-            stargazers_count: 100,
-            language: "TypeScript",
-          });
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
         }
 
         if (requestUrl.pathname === "/repos/beta/tool") {
-          return jsonResponse({
-            stargazers_count: 90,
-            language: "Python",
-          });
+          return jsonResponse(eligibleRepoFixture("Python", 90));
+        }
+
+        if (
+          requestUrl.pathname === "/repos/acme/project/git/trees/main" ||
+          requestUrl.pathname === "/repos/beta/tool/git/trees/main"
+        ) {
+          return jsonResponse(eligibleTreeFixture());
         }
 
         if (requestUrl.pathname === "/repos/acme/project/issues") {
@@ -811,26 +933,17 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(200);
+      .expect(202);
 
-    expect(response.body).toMatchObject({
-      searchedLabels: ["good first issue", "help wanted"],
-      discoveredRepos: 2,
-      seededRepos: 2,
-      recrawledRepos: 0,
-      createdIssues: 2,
-      skippedPullRequests: 0,
-    });
-    expect(response.body.runId).toEqual(expect.any(String));
+    expect(response.body).toEqual({ runId: expect.any(String) });
+
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
+    );
 
     expect(await countRows("repos")).toBe(2);
     expect(await countRows("issues")).toBe(2);
 
-    const [run] = await db
-      .select()
-      .from(ingestionRuns)
-      .where(eq(ingestionRuns.id, response.body.runId as string))
-      .limit(1);
     expect(run).toMatchObject({
       status: "SUCCESS",
       discoveredRepos: 2,
@@ -838,8 +951,147 @@ describeDb("hub e2e", () => {
       recrawledRepos: 0,
       createdIssues: 2,
       skippedPullRequests: 0,
+      failedRepositories: 0,
     });
+    expect(run.details).toEqual(
+      expect.objectContaining({
+        labels: expect.arrayContaining([
+          expect.objectContaining({
+            label: "good first issue",
+            pages: 2,
+            repositoryHits: 2,
+            skippedPullRequests: 1,
+          }),
+        ]),
+        repositories: expect.arrayContaining([
+          expect.objectContaining({
+            owner: "acme",
+            name: "project",
+            action: "seeded",
+          }),
+        ]),
+      }),
+    );
     expect(run.finishedAt).toBeInstanceOf(Date);
+
+    const runsResponse = await request(app.getHttpServer())
+      .get("/seed/ingestion-runs")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(runsResponse.body[0]).toMatchObject({
+      id: response.body.runId,
+      status: "SUCCESS",
+      discoveredRepos: 2,
+      failedRepositories: 0,
+    });
+    expect(runsResponse.body[0].startedAt).toEqual(expect.any(String));
+    expect(runsResponse.body[0].details.repositories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          owner: "acme",
+          name: "project",
+          action: "seeded",
+        }),
+      ]),
+    );
+  });
+
+  it("records partial success when one discovered repository fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request): Promise<Response> => {
+        const requestUrl = new URL(String(url));
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("good first issue")
+        ) {
+          return jsonResponse({
+            items: [
+              {
+                repository_url: "https://api.github.com/repos/acme/missing",
+              },
+              {
+                repository_url: "https://api.github.com/repos/acme/healthy",
+              },
+            ],
+          });
+        }
+
+        if (
+          requestUrl.pathname === "/search/issues" &&
+          requestUrl.searchParams.get("q")?.includes("help wanted")
+        ) {
+          return jsonResponse({ items: [] });
+        }
+
+        if (requestUrl.pathname === "/repos/acme/missing") {
+          return jsonResponse({ message: "not found" }, false, {}, 404);
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy") {
+          return jsonResponse(eligibleRepoFixture("TypeScript", 100));
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy/git/trees/main") {
+          return jsonResponse(eligibleTreeFixture());
+        }
+
+        if (requestUrl.pathname === "/repos/acme/healthy/issues") {
+          return jsonResponse([
+            {
+              id: 4001,
+              title: "Qualified healthy issue",
+              body: "Expected actual reproduce ".repeat(20),
+              html_url: "https://github.com/acme/healthy/issues/1",
+              labels: [
+                { name: "bug" },
+                { name: "good first issue" },
+                { name: "help wanted" },
+              ],
+            },
+          ]);
+        }
+
+        return jsonResponse({ message: "not found" }, false);
+      }),
+    );
+
+    const response = await request(app.getHttpServer())
+      .post("/seed/discover")
+      .set("X-Admin-Token", adminToken)
+      .expect(202);
+
+    expect(response.body).toEqual({ runId: expect.any(String) });
+
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
+    );
+    expect(run).toMatchObject({
+      status: "PARTIAL_SUCCESS",
+      discoveredRepos: 2,
+      seededRepos: 1,
+      createdIssues: 1,
+      failedRepositories: 1,
+    });
+    expect(run.details).toEqual(
+      expect.objectContaining({
+        repositories: expect.arrayContaining([
+          expect.objectContaining({
+            owner: "acme",
+            name: "missing",
+            action: "failed",
+            statusCode: 404,
+          }),
+          expect.objectContaining({
+            owner: "acme",
+            name: "healthy",
+            action: "seeded",
+          }),
+        ]),
+      }),
+    );
   });
 
   it("records rate-limited ingestion runs", async () => {
@@ -858,11 +1110,13 @@ describeDb("hub e2e", () => {
     const response = await request(app.getHttpServer())
       .post("/seed/discover")
       .set("X-Admin-Token", adminToken)
-      .expect(500);
+      .expect(202);
 
-    expect(response.body.error).toBe("GitHub API rate-limited with 403");
+    expect(response.body).toEqual({ runId: expect.any(String) });
 
-    const [run] = await db.select().from(ingestionRuns).limit(1);
+    const run = await waitForCompletedIngestionRun(
+      response.body.runId as string,
+    );
     expect(run).toMatchObject({
       status: "RATE_LIMITED",
       errorMessage: "GitHub API rate-limited with 403",
@@ -934,6 +1188,26 @@ describeDb("hub e2e", () => {
     );
     return Number(result.rows[0]?.count ?? 0);
   }
+
+  async function waitForCompletedIngestionRun(runId: string) {
+    const deadline = Date.now() + 3000;
+
+    while (Date.now() < deadline) {
+      const [run] = await db
+        .select()
+        .from(ingestionRuns)
+        .where(eq(ingestionRuns.id, runId))
+        .limit(1);
+
+      if (run && run.status !== "STARTED") {
+        return run;
+      }
+
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+    }
+
+    throw new Error(`Timed out waiting for ingestion run ${runId}`);
+  }
 });
 
 function restoreEnv(name: string, value: string | undefined): void {
@@ -942,6 +1216,25 @@ function restoreEnv(name: string, value: string | undefined): void {
   } else {
     process.env[name] = value;
   }
+}
+
+function eligibleRepoFixture(language: string, stars: number) {
+  return {
+    stargazers_count: stars,
+    language,
+    default_branch: "main",
+    pushed_at: new Date().toISOString(),
+  };
+}
+
+function eligibleTreeFixture() {
+  return {
+    tree: [
+      { path: ".github/workflows/ci.yml", type: "blob" },
+      { path: "src/example.spec.ts", type: "blob" },
+      { path: "package.json", type: "blob" },
+    ],
+  };
 }
 
 function jsonResponse(

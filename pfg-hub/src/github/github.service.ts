@@ -7,11 +7,12 @@ import {
 } from "@nestjs/common";
 import { SchedulerRegistry } from "@nestjs/schedule";
 import { CronJob } from "cron";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { APP_CONFIG, AppConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import {
+  IngestionRun,
   IngestionRunStatus,
   Issue,
   ingestionRuns,
@@ -23,6 +24,17 @@ import { ScoringService } from "../scoring/scoring.service";
 type GitHubRepoResponse = {
   stargazers_count: number;
   language?: string | null;
+  full_name?: string;
+  default_branch?: string;
+  pushed_at?: string | null;
+  license?: { spdx_id?: string | null } | null;
+  archived?: boolean;
+  disabled?: boolean;
+  has_issues?: boolean;
+};
+
+type GitHubTreeResponse = {
+  tree?: Array<{ path?: string; type?: string }>;
 };
 
 type GitHubIssueResponse = {
@@ -62,6 +74,47 @@ export type GitHubDiscoveryResult = {
   recrawledRepos: number;
   createdIssues: number;
   skippedPullRequests: number;
+  failedRepositories: number;
+  details: GitHubIngestionDetails;
+};
+
+export type GitHubIngestionDetails = {
+  labels: GitHubIngestionLabelDetail[];
+  repositories: GitHubIngestionRepositoryDetail[];
+  warnings: string[];
+  rateLimits: GitHubRateLimitSnapshot[];
+};
+
+type GitHubIngestionLabelDetail = {
+  label: string;
+  pages: number;
+  repositoryHits: number;
+  skippedPullRequests: number;
+  skippedInvalidRepositoryUrls: number;
+  stoppedReason?: string;
+};
+
+type GitHubIngestionRepositoryDetail = {
+  owner: string;
+  name: string;
+  action:
+    | "seeded"
+    | "existing"
+    | "ineligible"
+    | "recrawled"
+    | "failed"
+    | "recrawl_failed";
+  eligible?: boolean;
+  createdIssues?: number;
+  skippedPullRequests?: number;
+  error?: string;
+  statusCode?: number;
+};
+
+type GitHubRateLimitSnapshot = {
+  resource: GitHubRateLimitResource;
+  remaining: number | "unknown";
+  resetAt?: string;
 };
 
 @Injectable()
@@ -76,6 +129,10 @@ export class GitHubService
   private readonly rateLimitRemainingByResource = new Map<
     GitHubRateLimitResource,
     number
+  >();
+  private readonly rateLimitResetAtByResource = new Map<
+    GitHubRateLimitResource,
+    string
   >();
 
   constructor(
@@ -96,7 +153,7 @@ export class GitHubService
     const job = CronJob.from({
       cronTime: this.config.githubIngestionCron,
       onTick: () => {
-        void this.runIngestion().catch((error) => {
+        void this.enqueueIngestion().catch((error) => {
           this.logger.error(
             error instanceof Error ? error.message : "GitHub ingestion failed",
           );
@@ -121,6 +178,26 @@ export class GitHubService
     } catch {
       return;
     }
+  }
+
+  /** Returns recent ingestion audit runs for admin diagnostics. */
+  async listIngestionRuns(limit = 20): Promise<IngestionRun[]> {
+    const safeLimit = Math.min(Math.max(Math.trunc(limit) || 20, 1), 100);
+    return this.db
+      .select()
+      .from(ingestionRuns)
+      .orderBy(desc(ingestionRuns.startedAt))
+      .limit(safeLimit);
+  }
+
+  /** Returns a single ingestion audit run by id for admin diagnostics. */
+  async getIngestionRun(runId: string): Promise<IngestionRun | null> {
+    const [run] = await this.db
+      .select()
+      .from(ingestionRuns)
+      .where(eq(ingestionRuns.id, runId))
+      .limit(1);
+    return run ?? null;
   }
 
   /** Imports a GitHub repository once and crawls it when it passes eligibility. */
@@ -154,20 +231,68 @@ export class GitHubService
     const repoData = await this.githubRequest<GitHubRepoResponse>(
       `/repos/${owner}/${name}`,
     );
+    const canonicalRepo = this.canonicalRepository(owner, name, repoData);
+    const canonicalGithubUrl = `https://github.com/${canonicalRepo.owner}/${canonicalRepo.name}`;
+    if (canonicalGithubUrl !== githubUrl) {
+      const [canonicalExisting] = await this.db
+        .select()
+        .from(repos)
+        .where(eq(repos.githubUrl, canonicalGithubUrl))
+        .limit(1);
+      if (canonicalExisting) {
+        this.logger.log(
+          `Skipping existing canonical GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} eligible=${canonicalExisting.eligible}`,
+        );
+        return {
+          insertedRepo: false,
+          repoEligible: canonicalExisting.eligible,
+          crawl: null,
+        };
+      }
+    }
+
     const stars = Number(repoData.stargazers_count ?? 0);
-    const eligible = this.scoringService.isRepoEligible({ stars });
+    const repositorySignals = await this.inspectRepository(
+      canonicalRepo.owner,
+      canonicalRepo.name,
+      repoData.default_branch ?? "HEAD",
+    );
+    const lastPushedAt = this.parseGitHubDate(repoData.pushed_at);
+    const repoScore = this.scoringService.scoreRepo({
+      stars,
+      ciDetected: repositorySignals.ciDetected,
+      testsDetected: repositorySignals.testsDetected,
+      lastPushedAt,
+    });
+    const hasIssues = repoData.has_issues ?? true;
+    const repositoryActive =
+      !repoData.archived && !repoData.disabled && hasIssues;
+    const eligible =
+      repositoryActive &&
+      this.scoringService.isRepoEligible({
+        stars,
+        ciDetected: repositorySignals.ciDetected,
+        testsDetected: repositorySignals.testsDetected,
+        lastPushedAt,
+      });
     this.logger.log(
-      `Fetched GitHub repository ${owner}/${name} stars=${stars} language=${repoData.language ?? "unknown"} eligible=${eligible}`,
+      `Fetched GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} stars=${stars} score=${repoScore} ci=${repositorySignals.ciDetected} tests=${repositorySignals.testsDetected} pushedAt=${lastPushedAt?.toISOString() ?? "unknown"} language=${repoData.language ?? "unknown"} archived=${repoData.archived ?? false} disabled=${repoData.disabled ?? false} hasIssues=${hasIssues} eligible=${eligible}`,
     );
 
     const [repo] = await this.db
       .insert(repos)
       .values({
         id: randomUUID(),
-        githubUrl,
-        owner,
-        name,
+        githubUrl: canonicalGithubUrl,
+        owner: canonicalRepo.owner,
+        name: canonicalRepo.name,
         language: repoData.language ?? null,
+        ecosystems: repositorySignals.ecosystems,
+        license: repoData.license?.spdx_id ?? null,
+        ciDetected: repositorySignals.ciDetected,
+        testsDetected: repositorySignals.testsDetected,
+        lastPushedAt,
+        score: repoScore,
         stars,
         eligible,
       })
@@ -175,7 +300,7 @@ export class GitHubService
 
     const crawl = repo.eligible ? await this.crawlRepo(repo.id) : null;
     this.logger.log(
-      `Seeded GitHub repository ${owner}/${name} inserted=true eligible=${repo.eligible} createdIssues=${crawl?.createdIssues ?? 0}`,
+      `Seeded GitHub repository ${repo.owner}/${repo.name} inserted=true eligible=${repo.eligible} createdIssues=${crawl?.createdIssues ?? 0}`,
     );
 
     return {
@@ -187,6 +312,22 @@ export class GitHubService
 
   /** Runs discovery and recrawls stale known repositories with an audit row. */
   async runIngestion(): Promise<GitHubDiscoveryResult & { runId: string }> {
+    const { runId, details } = await this.startIngestionRun();
+    return this.executeIngestion(runId, details);
+  }
+
+  /** Starts a GitHub ingestion run in the background. */
+  async enqueueIngestion(): Promise<{ runId: string }> {
+    const { runId, details } = await this.startIngestionRun();
+    const ingestionPromise = this.executeIngestion(runId, details);
+    void ingestionPromise.catch(() => undefined);
+    return { runId };
+  }
+
+  private async startIngestionRun(): Promise<{
+    runId: string;
+    details: GitHubIngestionDetails;
+  }> {
     if (this.ingestionRunning) {
       this.logger.warn(
         "GitHub ingestion skipped because a run is already active",
@@ -197,63 +338,107 @@ export class GitHubService
     this.ingestionRunning = true;
     const runId = randomUUID();
     this.rateLimitRemainingByResource.clear();
+    this.rateLimitResetAtByResource.clear();
+    const details = this.createIngestionDetails();
     this.logger.log(`GitHub ingestion run ${runId} started`);
 
-    await this.db.insert(ingestionRuns).values({
-      id: runId,
-      status: "STARTED",
-      startedAt: new Date(),
-    });
-
     try {
-      const result = await this.discoverRepositories();
+      await this.db.insert(ingestionRuns).values({
+        id: runId,
+        status: "STARTED",
+        startedAt: new Date(),
+      });
+    } catch (error) {
+      this.ingestionRunning = false;
+      throw error;
+    }
+
+    return { runId, details };
+  }
+
+  private async executeIngestion(
+    runId: string,
+    details: GitHubIngestionDetails,
+  ): Promise<GitHubDiscoveryResult & { runId: string }> {
+    try {
+      const result = await this.discoverRepositories(details);
+      result.details.rateLimits = this.githubRateLimitSnapshots();
+      const status: IngestionRunStatus =
+        result.failedRepositories > 0 ? "PARTIAL_SUCCESS" : "SUCCESS";
       await this.db
         .update(ingestionRuns)
         .set({
-          status: "SUCCESS",
+          status,
           discoveredRepos: result.discoveredRepos,
           seededRepos: result.seededRepos,
           recrawledRepos: result.recrawledRepos,
           createdIssues: result.createdIssues,
           skippedPullRequests: result.skippedPullRequests,
+          failedRepositories: result.failedRepositories,
+          details: result.details,
           finishedAt: new Date(),
         })
         .where(eq(ingestionRuns.id, runId));
 
       this.logger.log(
-        `GitHub ingestion run ${runId} succeeded discoveredRepos=${result.discoveredRepos} seededRepos=${result.seededRepos} recrawledRepos=${result.recrawledRepos} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests}`,
+        `GitHub ingestion run ${runId} ${status.toLowerCase()} discoveredRepos=${result.discoveredRepos} seededRepos=${result.seededRepos} recrawledRepos=${result.recrawledRepos} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests} failedRepositories=${result.failedRepositories}`,
       );
       return { ...result, runId };
     } catch (error) {
-      const status: IngestionRunStatus =
-        error instanceof GitHubRateLimitError ? "RATE_LIMITED" : "FAILED";
-      this.logger.error(
-        `GitHub ingestion run ${runId} ${status.toLowerCase()} error=${error instanceof Error ? error.message : "Unknown ingestion error"}`,
-      );
-      await this.db
-        .update(ingestionRuns)
-        .set({
-          status,
-          errorMessage:
-            error instanceof Error ? error.message : "Unknown ingestion error",
-          finishedAt: new Date(),
-        })
-        .where(eq(ingestionRuns.id, runId));
+      await this.persistFailedIngestionRun(runId, details, error);
       throw error;
     } finally {
       this.ingestionRunning = false;
     }
   }
 
+  private async persistFailedIngestionRun(
+    runId: string,
+    details: GitHubIngestionDetails,
+    error: unknown,
+  ): Promise<void> {
+    const status: IngestionRunStatus =
+      error instanceof GitHubRateLimitError ? "RATE_LIMITED" : "FAILED";
+    const errorMessage = this.errorMessage(error);
+    details.rateLimits = this.githubRateLimitSnapshots();
+    if (!details.warnings.includes(errorMessage)) {
+      details.warnings.push(errorMessage);
+    }
+    this.logger.error(
+      `GitHub ingestion run ${runId} ${status.toLowerCase()} error=${errorMessage}`,
+    );
+    await this.db
+      .update(ingestionRuns)
+      .set({
+        status,
+        errorMessage,
+        details,
+        finishedAt: new Date(),
+      })
+      .where(eq(ingestionRuns.id, runId));
+  }
+
   /** Discovers repositories from qualified open GitHub issues, then seeds them. */
-  async discoverRepositories(): Promise<GitHubDiscoveryResult> {
+  async discoverRepositories(
+    details: GitHubIngestionDetails = this.createIngestionDetails(),
+  ): Promise<GitHubDiscoveryResult> {
     const discovered = new Map<string, { owner: string; name: string }>();
     this.logger.log(
       `Discovering GitHub repositories from labels=${this.discoveryLabels.join(",")}`,
     );
 
     for (const label of this.discoveryLabels) {
+      const labelDetail: GitHubIngestionLabelDetail = {
+        label,
+        pages: 0,
+        repositoryHits: 0,
+        skippedPullRequests: 0,
+        skippedInvalidRepositoryUrls: 0,
+      };
+      details.labels.push(labelDetail);
+
       if (this.isGithubQuotaLow("search")) {
+        labelDetail.stoppedReason = "search_quota_low";
         this.logger.warn(
           `Stopping GitHub discovery before label="${label}" because search quota is low remaining=${this.githubQuotaRemaining("search")}`,
         );
@@ -271,19 +456,28 @@ export class GitHubService
         await this.githubRequestPaginated<GitHubSearchIssuesResponse>(path, {
           maxPages: this.config.githubDiscoveryMaxPagesPerLabel,
         });
+      labelDetail.pages = pages.length;
       let discoveredForLabel = 0;
 
       for (const page of pages) {
         for (const item of page.items ?? []) {
-          if (item.pull_request) continue;
+          if (item.pull_request) {
+            labelDetail.skippedPullRequests += 1;
+            continue;
+          }
 
           const repo = this.parseRepositoryApiUrl(item.repository_url);
-          if (!repo) continue;
+          if (!repo) {
+            labelDetail.skippedInvalidRepositoryUrls += 1;
+            continue;
+          }
 
           discovered.set(`${repo.owner}/${repo.name}`, repo);
           discoveredForLabel += 1;
+          labelDetail.repositoryHits += 1;
 
           if (discovered.size >= this.config.githubDiscoveryMaxRepositories) {
+            labelDetail.stoppedReason = "repository_limit";
             this.logger.log(
               `GitHub discovery repository limit reached maxRepositories=${this.config.githubDiscoveryMaxRepositories}`,
             );
@@ -295,7 +489,7 @@ export class GitHubService
         }
       }
       this.logger.log(
-        `GitHub discovery label="${label}" pages=${pages.length} repositoryHits=${discoveredForLabel}`,
+        `GitHub discovery label="${label}" pages=${pages.length} repositoryHits=${discoveredForLabel} skippedPullRequests=${labelDetail.skippedPullRequests} skippedInvalidRepositoryUrls=${labelDetail.skippedInvalidRepositoryUrls}`,
       );
 
       if (discovered.size >= this.config.githubDiscoveryMaxRepositories) {
@@ -306,23 +500,53 @@ export class GitHubService
     let seededRepos = 0;
     let createdIssues = 0;
     let skippedPullRequests = 0;
+    let failedRepositories = 0;
     for (const repo of discovered.values()) {
       if (this.isGithubQuotaLow("core")) {
+        details.warnings.push(
+          "Stopped repository seeding because core quota is low",
+        );
         this.logger.warn(
           `Stopping GitHub repository seeding because core quota is low remaining=${this.githubQuotaRemaining("core")}`,
         );
         break;
       }
 
-      const result = await this.seedRepo(repo.owner, repo.name);
-      if (result.insertedRepo) seededRepos += 1;
-      createdIssues += result.crawl?.createdIssues ?? 0;
-      skippedPullRequests += result.crawl?.skippedPullRequests ?? 0;
+      try {
+        const result = await this.seedRepo(repo.owner, repo.name);
+        if (result.insertedRepo) seededRepos += 1;
+        createdIssues += result.crawl?.createdIssues ?? 0;
+        skippedPullRequests += result.crawl?.skippedPullRequests ?? 0;
+        details.repositories.push({
+          owner: repo.owner,
+          name: repo.name,
+          action: this.seedAction(result),
+          eligible: result.repoEligible,
+          createdIssues: result.crawl?.createdIssues ?? 0,
+          skippedPullRequests: result.crawl?.skippedPullRequests ?? 0,
+        });
+      } catch (error) {
+        if (error instanceof GitHubRateLimitError) throw error;
+
+        failedRepositories += 1;
+        details.repositories.push({
+          owner: repo.owner,
+          name: repo.name,
+          action: "failed",
+          error: this.errorMessage(error),
+          statusCode:
+            error instanceof GitHubHttpError ? error.statusCode : undefined,
+        });
+        this.logger.warn(
+          `Skipping GitHub repository ${repo.owner}/${repo.name} after ingestion error=${this.errorMessage(error)}`,
+        );
+      }
     }
 
-    const recrawl = await this.recrawlKnownRepositories();
+    const recrawl = await this.recrawlKnownRepositories(details);
+    failedRepositories += recrawl.failedRepositories;
     this.logger.log(
-      `GitHub discovery completed discoveredRepos=${discovered.size} seededRepos=${seededRepos} recrawledRepos=${recrawl.recrawledRepos}`,
+      `GitHub discovery completed discoveredRepos=${discovered.size} seededRepos=${seededRepos} recrawledRepos=${recrawl.recrawledRepos} failedRepositories=${failedRepositories}`,
     );
 
     return {
@@ -332,6 +556,8 @@ export class GitHubService
       recrawledRepos: recrawl.recrawledRepos,
       createdIssues: createdIssues + recrawl.createdIssues,
       skippedPullRequests: skippedPullRequests + recrawl.skippedPullRequests,
+      failedRepositories,
+      details,
     };
   }
 
@@ -379,13 +605,14 @@ export class GitHubService
         .map((label) => label.name)
         .filter(Boolean)
         .join(",");
-      const candidate: Pick<Issue, "labels" | "body"> = {
+      const candidate: Pick<Issue, "labels" | "body"> & { title: string } = {
+        title: item.title,
         labels,
         body: item.body ?? null,
       };
-      const score = this.scoringService.scoreIssue(candidate);
+      const assessment = this.scoringService.assessIssue(candidate);
 
-      if (score >= this.config.issueMinScore) {
+      if (assessment.score >= this.config.issueMinScore) {
         await this.db.insert(issues).values({
           id: randomUUID(),
           repoId: repo.id,
@@ -394,7 +621,9 @@ export class GitHubService
           body: item.body ?? null,
           githubUrl: item.html_url,
           labels,
-          score,
+          score: assessment.score,
+          difficulty: assessment.difficulty,
+          estimatedMinutes: assessment.estimatedMinutes,
           status: "PENDING",
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -416,16 +645,104 @@ export class GitHubService
     return result;
   }
 
-  private async recrawlKnownRepositories(): Promise<{
+  /** Inspects a repository tree once to identify CI, test and ecosystem signals. */
+  private async inspectRepository(
+    owner: string,
+    name: string,
+    branch: string,
+  ): Promise<{
+    ciDetected: boolean;
+    testsDetected: boolean;
+    ecosystems: string[];
+  }> {
+    const tree = await this.githubRequest<GitHubTreeResponse>(
+      `/repos/${owner}/${name}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+    );
+    const paths = (tree.tree ?? [])
+      .filter((entry) => entry.type === "blob" && entry.path)
+      .map((entry) => entry.path!.toLowerCase());
+
+    return {
+      ciDetected: paths.some((path) =>
+        this.matchesPath(path, [
+          ".github/workflows/",
+          ".circleci/",
+          ".gitlab-ci.yml",
+          "azure-pipelines",
+          "jenkinsfile",
+          ".travis.yml",
+        ]),
+      ),
+      testsDetected: paths.some((path) =>
+        this.matchesPath(path, [
+          "/test/",
+          "/tests/",
+          "/__tests__/",
+          ".test.",
+          ".spec.",
+          "test_",
+          "_test.",
+        ]),
+      ),
+      ecosystems: this.detectEcosystems(paths),
+    };
+  }
+
+  private detectEcosystems(paths: string[]): string[] {
+    const ecosystems = new Set<string>();
+    for (const path of paths) {
+      if (
+        this.matchesPath(path, ["package.json", "pnpm-lock.yaml", "yarn.lock"])
+      ) {
+        ecosystems.add("npm");
+      }
+      if (
+        this.matchesPath(path, [
+          "pyproject.toml",
+          "requirements.txt",
+          "setup.py",
+          "pipfile",
+        ])
+      ) {
+        ecosystems.add("pip");
+      }
+      if (this.matchesPath(path, ["cargo.toml"])) ecosystems.add("cargo");
+      if (this.matchesPath(path, ["go.mod"])) ecosystems.add("go");
+      if (
+        this.matchesPath(path, ["pom.xml", "build.gradle", "build.gradle.kts"])
+      ) {
+        ecosystems.add("maven");
+      }
+      if (this.matchesPath(path, ["composer.json"])) ecosystems.add("composer");
+      if (this.matchesPath(path, ["gemfile"])) ecosystems.add("bundler");
+    }
+    return [...ecosystems].sort();
+  }
+
+  private matchesPath(path: string, markers: string[]): boolean {
+    return markers.some((marker) => path === marker || path.includes(marker));
+  }
+
+  private parseGitHubDate(value: string | null | undefined): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  private async recrawlKnownRepositories(
+    details: GitHubIngestionDetails,
+  ): Promise<{
     recrawledRepos: number;
     createdIssues: number;
     skippedPullRequests: number;
+    failedRepositories: number;
   }> {
     const now = Date.now();
     const knownRepos = await this.db.select().from(repos);
     let recrawledRepos = 0;
     let createdIssues = 0;
     let skippedPullRequests = 0;
+    let failedRepositories = 0;
 
     for (const repo of knownRepos) {
       if (!repo.eligible) continue;
@@ -442,16 +759,53 @@ export class GitHubService
         break;
       }
 
-      const result = await this.crawlRepo(repo.id);
-      recrawledRepos += 1;
-      createdIssues += result.createdIssues;
-      skippedPullRequests += result.skippedPullRequests;
+      try {
+        const result = await this.crawlRepo(repo.id);
+        recrawledRepos += 1;
+        createdIssues += result.createdIssues;
+        skippedPullRequests += result.skippedPullRequests;
+        details.repositories.push({
+          owner: repo.owner,
+          name: repo.name,
+          action: "recrawled",
+          eligible: repo.eligible,
+          createdIssues: result.createdIssues,
+          skippedPullRequests: result.skippedPullRequests,
+        });
+      } catch (error) {
+        if (error instanceof GitHubRateLimitError) throw error;
+
+        failedRepositories += 1;
+        details.repositories.push({
+          owner: repo.owner,
+          name: repo.name,
+          action: "recrawl_failed",
+          eligible: repo.eligible,
+          error: this.errorMessage(error),
+          statusCode:
+            error instanceof GitHubHttpError ? error.statusCode : undefined,
+        });
+        if (this.isRepositoryGone(error)) {
+          await this.db
+            .update(repos)
+            .set({ eligible: false, lastCrawledAt: new Date() })
+            .where(eq(repos.id, repo.id));
+        }
+        this.logger.warn(
+          `Skipping GitHub recrawl for ${repo.owner}/${repo.name} after error=${this.errorMessage(error)}`,
+        );
+      }
     }
 
     this.logger.log(
-      `GitHub recrawl completed eligibleReposChecked=${knownRepos.length} recrawledRepos=${recrawledRepos} createdIssues=${createdIssues}`,
+      `GitHub recrawl completed eligibleReposChecked=${knownRepos.length} recrawledRepos=${recrawledRepos} createdIssues=${createdIssues} failedRepositories=${failedRepositories}`,
     );
-    return { recrawledRepos, createdIssues, skippedPullRequests };
+    return {
+      recrawledRepos,
+      createdIssues,
+      skippedPullRequests,
+      failedRepositories,
+    };
   }
 
   /** Performs an authenticated GitHub API request and returns typed JSON. */
@@ -499,31 +853,32 @@ export class GitHubService
       attempt <= this.config.githubMaxRetries;
       attempt += 1
     ) {
-      const response = await fetch(this.githubUrl(pathOrUrl), {
-        headers: {
-          Authorization: `Bearer ${this.config.githubToken}`,
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "prompt-for-good-hub",
-        },
-      });
+      let response: Response;
+      try {
+        response = await fetch(this.githubUrl(pathOrUrl), {
+          headers: {
+            Authorization: `Bearer ${this.config.githubToken}`,
+            Accept: "application/vnd.github.v3+json",
+            "User-Agent": "prompt-for-good-hub",
+          },
+        });
+      } catch (error) {
+        if (attempt < this.config.githubMaxRetries) {
+          await this.backoffAfterNetworkError(attempt, error);
+          continue;
+        }
+
+        throw new GitHubNetworkError(this.errorMessage(error));
+      }
+
+      const rateLimitResource = this.recordGitHubRateLimit(pathOrUrl, response);
 
       if (response.ok) {
-        const rateLimitResource = this.githubRateLimitResource(
-          pathOrUrl,
-          response,
-        );
-        const rateLimitRemaining = response.headers?.get(
-          "x-ratelimit-remaining",
-        );
-        if (rateLimitRemaining !== null) {
-          this.rateLimitRemainingByResource.set(
-            rateLimitResource,
-            Number(rateLimitRemaining),
-          );
-        }
+        const rateLimitRemaining =
+          this.rateLimitRemainingByResource.get(rateLimitResource);
         if (
-          rateLimitRemaining !== null &&
-          Number(rateLimitRemaining) <= this.config.githubMinRateLimitRemaining
+          rateLimitRemaining !== undefined &&
+          rateLimitRemaining <= this.config.githubMinRateLimitRemaining
         ) {
           this.logger.warn(
             `GitHub API quota running low remaining=${rateLimitRemaining} path=${this.redactUrl(pathOrUrl)}`,
@@ -536,9 +891,10 @@ export class GitHubService
         };
       }
 
-      if (this.isRateLimited(response)) {
+      if (this.isPrimaryRateLimited(response)) {
+        const resetAt = this.rateLimitResetAtByResource.get(rateLimitResource);
         this.logger.warn(
-          `GitHub API rate limit reached status=${response.status} path=${this.redactUrl(pathOrUrl)}`,
+          `GitHub API rate limit reached status=${response.status} resource=${rateLimitResource} resetAt=${resetAt ?? "unknown"} path=${this.redactUrl(pathOrUrl)}`,
         );
         throw new GitHubRateLimitError(
           `GitHub API rate-limited with ${response.status}`,
@@ -553,10 +909,13 @@ export class GitHubService
         continue;
       }
 
-      throw new Error(`GitHub API request failed with ${response.status}`);
+      throw new GitHubHttpError(
+        response.status,
+        `GitHub API request failed with ${response.status}`,
+      );
     }
 
-    throw new Error("GitHub API request failed");
+    throw new GitHubHttpError(0, "GitHub API request failed");
   }
 
   private githubUrl(pathOrUrl: string): string {
@@ -584,7 +943,7 @@ export class GitHubService
     return null;
   }
 
-  private isRateLimited(response: Response): boolean {
+  private isPrimaryRateLimited(response: Response): boolean {
     return (
       (response.status === 403 || response.status === 429) &&
       response.headers?.get("x-ratelimit-remaining") === "0"
@@ -605,6 +964,46 @@ export class GitHubService
     return this.rateLimitRemainingByResource.get(resource) ?? "unknown";
   }
 
+  private githubRateLimitSnapshots(): GitHubRateLimitSnapshot[] {
+    const resources = new Set<GitHubRateLimitResource>([
+      ...this.rateLimitRemainingByResource.keys(),
+      ...this.rateLimitResetAtByResource.keys(),
+    ]);
+
+    return [...resources].map((resource) => ({
+      resource,
+      remaining: this.githubQuotaRemaining(resource),
+      resetAt: this.rateLimitResetAtByResource.get(resource),
+    }));
+  }
+
+  private recordGitHubRateLimit(
+    pathOrUrl: string,
+    response: Response,
+  ): GitHubRateLimitResource {
+    const rateLimitResource = this.githubRateLimitResource(pathOrUrl, response);
+    const rateLimitRemaining = response.headers?.get("x-ratelimit-remaining");
+    if (rateLimitRemaining !== null) {
+      const parsedRemaining = Number(rateLimitRemaining);
+      if (Number.isFinite(parsedRemaining)) {
+        this.rateLimitRemainingByResource.set(
+          rateLimitResource,
+          parsedRemaining,
+        );
+      }
+    }
+
+    const rateLimitReset = Number(response.headers?.get("x-ratelimit-reset"));
+    if (Number.isFinite(rateLimitReset) && rateLimitReset > 0) {
+      this.rateLimitResetAtByResource.set(
+        rateLimitResource,
+        new Date(rateLimitReset * 1000).toISOString(),
+      );
+    }
+
+    return rateLimitResource;
+  }
+
   private githubRateLimitResource(
     pathOrUrl: string,
     response: Response,
@@ -617,19 +1016,105 @@ export class GitHubService
   }
 
   private isRetryableResponse(response: Response): boolean {
-    return [429, 500, 502, 503, 504].includes(response.status);
+    return (
+      [429, 500, 502, 503, 504].includes(response.status) ||
+      this.isSecondaryRateLimit(response)
+    );
+  }
+
+  private isSecondaryRateLimit(response: Response): boolean {
+    return (
+      response.status === 403 &&
+      response.headers?.get("x-ratelimit-remaining") !== "0" &&
+      response.headers?.get("retry-after") !== null
+    );
   }
 
   private async backoff(attempt: number, response: Response): Promise<void> {
-    const retryAfter = Number(response.headers?.get("retry-after") ?? 0);
-    const baseDelayMs = this.config.githubBackoffBaseMs;
-    const delayMs =
-      retryAfter > 0 ? retryAfter * 1000 : baseDelayMs * 2 ** attempt;
+    const delayMs = this.backoffDelayMs(attempt, response);
 
     this.logger.warn(
       `Retrying GitHub request after ${delayMs}ms following ${response.status}`,
     );
     await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+  }
+
+  private async backoffAfterNetworkError(
+    attempt: number,
+    error: unknown,
+  ): Promise<void> {
+    const delayMs = this.exponentialBackoffWithJitterMs(attempt);
+
+    this.logger.warn(
+      `Retrying GitHub request after ${delayMs}ms following network error=${this.errorMessage(error)}`,
+    );
+    await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+  }
+
+  private backoffDelayMs(attempt: number, response: Response): number {
+    const retryAfter = Number(response.headers?.get("retry-after") ?? 0);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      return retryAfter * 1000;
+    }
+
+    const rateLimitReset = Number(response.headers?.get("x-ratelimit-reset"));
+    if (
+      response.headers?.get("x-ratelimit-remaining") === "0" &&
+      Number.isFinite(rateLimitReset) &&
+      rateLimitReset > 0
+    ) {
+      return Math.max(rateLimitReset * 1000 - Date.now(), 0);
+    }
+
+    return this.exponentialBackoffWithJitterMs(attempt);
+  }
+
+  private exponentialBackoffWithJitterMs(attempt: number): number {
+    const baseDelayMs = this.config.githubBackoffBaseMs;
+    const exponentialDelayMs = baseDelayMs * 2 ** attempt;
+    const jitterCeilingMs = Math.max(1, Math.min(baseDelayMs, 250));
+    return exponentialDelayMs + Math.floor(Math.random() * jitterCeilingMs);
+  }
+
+  private createIngestionDetails(): GitHubIngestionDetails {
+    return {
+      labels: [],
+      repositories: [],
+      warnings: [],
+      rateLimits: [],
+    };
+  }
+
+  private seedAction(
+    result: Awaited<ReturnType<GitHubService["seedRepo"]>>,
+  ): GitHubIngestionRepositoryDetail["action"] {
+    if (!result.insertedRepo) return "existing";
+    return result.repoEligible ? "seeded" : "ineligible";
+  }
+
+  private isRepositoryGone(error: unknown): boolean {
+    return (
+      error instanceof GitHubHttpError &&
+      [404, 410, 451].includes(error.statusCode)
+    );
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private canonicalRepository(
+    owner: string,
+    name: string,
+    repoData: GitHubRepoResponse,
+  ): { owner: string; name: string } {
+    const [canonicalOwner, canonicalName] =
+      repoData.full_name?.split("/") ?? [];
+    if (canonicalOwner && canonicalName) {
+      return { owner: canonicalOwner, name: canonicalName };
+    }
+
+    return { owner, name };
   }
 
   private parseRepositoryApiUrl(
@@ -660,3 +1145,14 @@ type GitHubCrawlResult = {
 };
 
 class GitHubRateLimitError extends Error {}
+
+class GitHubHttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+class GitHubNetworkError extends Error {}

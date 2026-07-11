@@ -9,6 +9,7 @@ import { Database } from "../src/db/database.module";
 import { Issue, Runner } from "../src/db/schema";
 import { IssuesService } from "../src/issues/issues.service";
 import { RunnersService } from "../src/runners/runners.service";
+import { ScoringService } from "../src/scoring/scoring.service";
 
 const runner: Runner = {
   id: "runner-1",
@@ -17,10 +18,12 @@ const runner: Runner = {
   quotaRemainingToday: 0,
   lastSeenAt: null,
   active: true,
+  preferences: {},
   createdAt: new Date("2026-01-01T00:00:00Z"),
 };
 
 const config: AppConfig = {
+  corsOrigins: ["http://localhost:5173"],
   port: 8080,
   httpsEnabled: false,
   httpsCertPath: "./certs/hub.pfg.local.pem",
@@ -49,6 +52,8 @@ const issue: Issue = {
   githubUrl: "https://github.com/owner/repo/issues/42",
   labels: "bug,good first issue",
   score: 85,
+  difficulty: "medium",
+  estimatedMinutes: 90,
   status: "PENDING",
   claimedBy: null,
   claimedAt: null,
@@ -61,7 +66,9 @@ type SelectRow = unknown[];
 
 function createSelectChain(results: SelectRow[]) {
   const limit = vi.fn(async () => results.shift() ?? []);
-  const orderBy = vi.fn((_first: unknown, _second: unknown) => ({ limit }));
+  const orderBy = vi.fn(
+    async (_first: unknown, _second: unknown) => results.shift() ?? [],
+  );
   const where = vi.fn((_condition: unknown) => ({ limit, orderBy }));
   const innerJoin = vi.fn((_table: unknown, _condition: unknown) => ({
     where,
@@ -110,15 +117,19 @@ function createIssuesService(options: {
   const runnersService = {
     validateToken: vi.fn(async (_token: string) => options.runner ?? runner),
   } as unknown as RunnersService;
+  const scoringService = {
+    matchRunnerPreferences: vi.fn(() => 0),
+  } as unknown as ScoringService;
 
   return {
-    service: new IssuesService(db, runnersService, config),
+    service: new IssuesService(db, runnersService, scoringService, config),
     select,
     update,
     txUpdate,
     txInsert,
     transaction,
     runnersService,
+    scoringService,
   };
 }
 
@@ -153,6 +164,40 @@ describe("IssuesService", () => {
     const { service } = createIssuesService({ selectResults: [[]] });
 
     await expect(service.getNextIssue("token-1")).resolves.toBeNull();
+  });
+
+  it("prefers a compatible issue over a higher globally scored issue", async () => {
+    const preferred: Issue = { ...issue, id: "preferred", score: 80 };
+    const higherScored: Issue = { ...issue, id: "higher-scored", score: 95 };
+    const { service, scoringService } = createIssuesService({
+      selectResults: [
+        [
+          {
+            ...withRepo(preferred),
+            owner: "acme",
+            name: "preferred-project",
+            language: "TypeScript",
+            ecosystems: ["npm"],
+            license: "MIT",
+          },
+          {
+            ...withRepo(higherScored),
+            owner: "acme",
+            name: "higher-scored-project",
+            language: "Python",
+            ecosystems: ["pip"],
+            license: "MIT",
+          },
+        ],
+      ],
+    });
+    vi.mocked(scoringService.matchRunnerPreferences).mockImplementation(
+      (candidate) => (candidate.name === "preferred-project" ? 4 : 0),
+    );
+
+    await expect(service.getNextIssue("token-1")).resolves.toMatchObject({
+      id: "preferred",
+    });
   });
 
   // Claiming an issue is a conditional state transition: only a pending issue

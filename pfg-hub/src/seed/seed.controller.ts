@@ -1,13 +1,17 @@
 import {
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
+  Param,
   Post,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import {
+  ApiAcceptedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
@@ -15,8 +19,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from "@nestjs/swagger";
+import { IngestionRunDto, IngestionRunStartedDto } from "../openapi/dtos";
 import { AdminTokenGuard } from "../auth/admin-token.guard";
-import { GitHubDiscoveryResult, GitHubService } from "../github/github.service";
+import { IngestionRun } from "../db/schema";
+import { GitHubService } from "../github/github.service";
 
 @Controller("seed")
 @UseGuards(AdminTokenGuard)
@@ -78,20 +84,82 @@ export class SeedController {
   }
 
   @Post("discover")
-  @HttpCode(HttpStatus.OK)
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: "Discover repositories from GitHub issues",
+    summary: "Start GitHub repository discovery",
     description:
-      "Searches GitHub for open good-first-issue/help-wanted issues, discovers their repositories, and seeds qualifying repositories. Requires a valid X-Admin-Token header.",
+      "Starts a background GitHub issue-label discovery run and returns its ingestion run id. Poll GET /seed/ingestion-runs/{runId} for completion. Requires a valid X-Admin-Token header.",
   })
-  @ApiOkResponse({ description: "Repository discovery completed" })
+  @ApiAcceptedResponse({
+    description: "Repository discovery run accepted",
+    type: IngestionRunStartedDto,
+  })
   @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
   @ApiResponse({
-    status: 502,
-    description: "GitHub API unreachable or rate-limited",
+    status: 500,
+    description: "Ingestion run could not be started",
   })
-  /** Discovers candidate repositories from GitHub issue search. */
-  async discoverRepos(): Promise<GitHubDiscoveryResult & { runId: string }> {
-    return this.githubService.runIngestion();
+  /** Starts candidate repository discovery from GitHub issue search. */
+  async discoverRepos(): Promise<IngestionRunStartedDto> {
+    return this.githubService.enqueueIngestion();
+  }
+
+  @Get("ingestion-runs")
+  @ApiOperation({
+    summary: "List recent GitHub ingestion runs",
+    description:
+      "Returns recent scheduled or manual GitHub ingestion runs with counters, status, errors and structured diagnostic details. Requires a valid X-Admin-Token header.",
+  })
+  @ApiQuery({
+    name: "limit",
+    required: false,
+    example: 20,
+    description: "Maximum number of runs to return, clamped to 1-100",
+  })
+  @ApiOkResponse({
+    description: "Recent ingestion runs",
+    isArray: true,
+    type: IngestionRunDto,
+  })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  /** Lists recent GitHub ingestion audit runs. */
+  async listIngestionRuns(
+    @Query("limit") limit?: string,
+  ): Promise<IngestionRunDto[]> {
+    const runs = await this.githubService.listIngestionRuns(
+      Number(limit ?? 20),
+    );
+    return runs.map((run) => this.toIngestionRunDto(run));
+  }
+
+  @Get("ingestion-runs/:runId")
+  @ApiOperation({
+    summary: "Get a GitHub ingestion run",
+    description:
+      "Returns one GitHub ingestion run with its current or completed counters, details, timestamps and error information. Requires a valid X-Admin-Token header.",
+  })
+  @ApiOkResponse({
+    description: "Ingestion run found",
+    type: IngestionRunDto,
+  })
+  @ApiResponse({ status: 404, description: "Ingestion run not found" })
+  @ApiResponse({ status: 401, description: "Missing or invalid X-Admin-Token" })
+  /** Gets one GitHub ingestion audit run by id. */
+  async getIngestionRun(
+    @Param("runId") runId: string,
+  ): Promise<IngestionRunDto> {
+    const run = await this.githubService.getIngestionRun(runId);
+    if (!run) {
+      throw new NotFoundException("Ingestion run not found");
+    }
+    return this.toIngestionRunDto(run);
+  }
+
+  private toIngestionRunDto(run: IngestionRun): IngestionRunDto {
+    return {
+      ...run,
+      startedAt: run.startedAt.toISOString(),
+      finishedAt: run.finishedAt?.toISOString() ?? null,
+    };
   }
 }

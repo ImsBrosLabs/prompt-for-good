@@ -62,10 +62,11 @@ The intended agent pipeline is:
 
 ```text
 prompt-for-good/
-├── pfg-hub/      # Hub API: NestJS, Fastify, Drizzle, PostgreSQL
-├── pfg-agent/    # Agent runtime: Python 3.11, LangChain, Anthropic, GitPython
-├── pfg-runner/   # Docker packaging for pfg-agent
-├── docs/         # Architecture notes, ADRs, hub onboarding, contributing
+├── pfg-hub/        # Hub API: NestJS, Fastify, Drizzle, PostgreSQL
+├── pfg-hub-admin/  # Back office: React, TypeScript, Vite, React-admin
+├── pfg-agent/      # Agent runtime: Python 3.11, LangChain, Anthropic, GitPython
+├── pfg-runner/     # Docker packaging for pfg-agent
+├── docs/           # Architecture notes, ADRs, hub onboarding, contributing
 └── docker-compose.yml
 ```
 
@@ -89,15 +90,16 @@ PostgreSQL locally.
 ```bash
 cp .env.example .env
 docker compose build
-docker compose up hub
+docker compose up hub admin
 ```
 
-The hub is available at:
+The hub and admin are available at:
 
 ```text
 http://localhost:8080/actuator/health
 http://localhost:8080/docs
 http://localhost:8080/docs-json
+http://localhost:5173
 ```
 
 Run checks in Docker:
@@ -240,6 +242,32 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
+### Native admin development
+
+The back-office app reads repositories, issues, runners, and contributions from
+the hub's `/admin/*` REST endpoints. Install dependencies and start Vite:
+
+```bash
+cd pfg-hub-admin
+cp .env.example .env
+npm install
+npm run dev
+```
+
+`VITE_PFG_HUB_API_URL` defaults to `/api`; the Vite proxy forwards that path to
+`http://localhost:8080` for native development. Sign in with the hub's
+`ADMIN_KEY` value. The static admin key remains an MVP authentication mechanism
+and should eventually be replaced with JWT or session authentication.
+
+The admin can also run in its own development container. Its Vite proxy reaches
+a hub running on the host through `host.docker.internal`:
+
+```bash
+cd pfg-hub-admin
+cp .env.example .env
+docker compose up --build
+```
+
 ### Runner-only development
 
 ```bash
@@ -270,7 +298,8 @@ Current endpoints:
 | `POST` | `/issues/:id/done` | `X-Runner-Token` | Report success or failure |
 | `POST` | `/seed/default` | `X-Admin-Token` | Seed the default demo repository |
 | `POST` | `/seed/repo` | `X-Admin-Token` | Seed one GitHub repository |
-| `POST` | `/seed/discover` | `X-Admin-Token` | Discover repositories from GitHub issue search |
+| `POST` | `/seed/discover` | `X-Admin-Token` | Start background repository discovery from GitHub issue search |
+| `GET` | `/seed/ingestion-runs` | `X-Admin-Token` | List recent GitHub ingestion runs and diagnostics |
 
 Example runner flow:
 
@@ -292,6 +321,24 @@ curl -X POST http://localhost:8080/seed/repo \
   -d '{"owner":"nestjs","name":"nestjs"}'
 ```
 
+Example ingestion audit:
+
+```bash
+curl -s -X POST http://localhost:8080/seed/discover \
+  -H 'X-Admin-Token: dev-admin-key'
+
+curl -s http://localhost:8080/seed/ingestion-runs \
+  -H 'X-Admin-Token: dev-admin-key'
+```
+
+Manual and scheduled GitHub discovery starts in the background and records an
+`ingestion_runs` row. `POST /seed/discover` returns the `runId`; poll
+`GET /seed/ingestion-runs/:runId` for aggregate counters plus JSON details for
+searched labels, repository seed or recrawl results, warnings and GitHub
+rate-limit snapshots. If some repositories fail but the run can continue, the
+run is stored as `PARTIAL_SUCCESS`; hard GitHub quota exhaustion is stored as
+`RATE_LIMITED`.
+
 ---
 
 ## Configuration
@@ -312,13 +359,17 @@ Hub variables:
 | Variable | Default | Purpose |
 |---|---|---|
 | `PFG_HUB_PORT` | `8080` | Host port used by root Docker Compose |
+| `PFG_HUB_ADMIN_PORT` | `5173` | Host port used by the admin Vite server |
 | `PFG_POSTGRES_PORT` | `5432` | Host port for the dev PostgreSQL container |
+| `VITE_PFG_HUB_API_URL` | `/api` | Hub API path embedded in the admin client |
+| `PFG_HUB_PROXY_TARGET` | inferred | Optional explicit Vite proxy target for the hub |
+| `CORS_ORIGINS` | local admin origins | Comma-separated browser origins allowed by the hub |
 | `PORT` | `8080` | Hub HTTP port inside the Node process |
 | `HTTPS_ENABLED` | `false` | Enable local HTTPS when certificates exist |
 | `HTTPS_CERT_PATH` | `./certs/hub.pfg.local.pem` | Local mkcert certificate path |
 | `HTTPS_KEY_PATH` | `./certs/hub.pfg.local-key.pem` | Local mkcert private key path |
 | `DATABASE_URL` | local postgres URL | Hub PostgreSQL connection string |
-| `ADMIN_KEY` | empty | Admin token required by `/seed/**` |
+| `ADMIN_KEY` | empty | Admin token required by `/admin/**` and `/seed/**` |
 | `GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |
 | `GITHUB_INGESTION_ENABLED` | `false` | Enable scheduled GitHub ingestion |
 | `GITHUB_INGESTION_CRON` | `0 */6 * * *` | Ingestion cron expression |
@@ -350,6 +401,7 @@ Agent/runner variables:
 | Component | Stack |
 |---|---|
 | `pfg-hub` | TypeScript, NestJS 11, Fastify, Drizzle, PostgreSQL, Vitest |
+| `pfg-hub-admin` | React, TypeScript, Vite, React-admin, Material UI |
 | `pfg-agent` | Python 3.11, LangChain, Anthropic SDK, GitPython, PyGithub, httpx |
 | `pfg-runner` | Docker image wrapping `pfg-agent` |
 | Default LLM | Claude via Anthropic, with future provider expansion planned |

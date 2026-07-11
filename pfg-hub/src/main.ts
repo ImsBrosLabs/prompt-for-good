@@ -10,6 +10,7 @@ import { AppConfig, loadConfig } from "./config";
 import { GlobalExceptionFilter } from "./errors/global-exception.filter";
 import { configureOpenApi } from "./openapi/swagger";
 
+/** Selects HTTP or certificate-backed HTTPS without breaking local fallback startup. */
 function createFastifyAdapter(config: AppConfig): FastifyAdapter {
   if (!config.httpsEnabled) {
     return new FastifyAdapter();
@@ -33,6 +34,18 @@ function createFastifyAdapter(config: AppConfig): FastifyAdapter {
   });
 }
 
+/** Restricts browser API access to the configured administration origins. */
+export function configureCors(
+  app: NestFastifyApplication,
+  config: AppConfig,
+): void {
+  app.enableCors({
+    origin: config.corsOrigins,
+    credentials: true,
+    allowedHeaders: ["Content-Type", "X-Admin-Token"],
+  });
+}
+
 /** Builds the Nest/Fastify application and starts the HTTP server. */
 async function bootstrap() {
   const config = loadConfig();
@@ -42,6 +55,7 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new GlobalExceptionFilter());
+  configureCors(app, config);
   configureOpenApi(app);
 
   await app.listen(config.port, "0.0.0.0");
