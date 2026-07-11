@@ -20,6 +20,15 @@ export const runtimeConfigValueTypes = [
   "integer",
   "string",
 ] as const;
+const runtimeConfigValueSchema = [
+  { type: "boolean" as const },
+  { type: "integer" as const },
+  { type: "string" as const },
+];
+const nullableRuntimeConfigValueSchema = [
+  ...runtimeConfigValueSchema,
+  { type: "null" as const },
+];
 
 export class RunnerPreferencesDto implements RunnerPreferences {
   @ApiPropertyOptional({ example: ["owner/repo"], type: [String] })
@@ -356,7 +365,8 @@ export class RuntimeConfigMetadataDto {
 
   @ApiProperty({
     description: "Catalog fallback value, hidden as null when secret is true",
-    nullable: true,
+    oneOf: nullableRuntimeConfigValueSchema,
+    type: Array,
   })
   defaultValue!: unknown;
 }
@@ -370,7 +380,8 @@ export class RuntimeConfigItemDto {
 
   @ApiProperty({
     description: "Effective value, hidden as null when secret is true",
-    nullable: true,
+    oneOf: nullableRuntimeConfigValueSchema,
+    type: Array,
   })
   value!: unknown;
 
@@ -378,6 +389,7 @@ export class RuntimeConfigItemDto {
     description:
       "Raw environment variable value for this catalog entry, hidden as null when secret is true or unset",
     nullable: true,
+    type: String,
   })
   environmentValue!: string | null;
 
@@ -408,6 +420,8 @@ export class RuntimeConfigListResponseDto {
 export class RuntimeConfigUpdateRequestDto {
   @ApiProperty({
     description: "JSON value validated by the catalog schema for this key",
+    oneOf: runtimeConfigValueSchema,
+    type: Array,
   })
   value!: unknown;
 }

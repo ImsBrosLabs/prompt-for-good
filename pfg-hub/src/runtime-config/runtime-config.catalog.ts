@@ -2,7 +2,11 @@ import { validateCronExpression } from "cron";
 import { z } from "zod";
 
 export type RuntimeConfigCategory =
-  "Issues" | "GitHub ingestion" | "GitHub API";
+  | "Hub"
+  | "Security"
+  | "Issues"
+  | "GitHub ingestion"
+  | "GitHub API";
 
 export type RuntimeConfigValueSource = "database" | "environment" | "default";
 
@@ -64,6 +68,84 @@ function defineCatalog<
 }
 
 export const RUNTIME_CONFIG_CATALOG = defineCatalog([
+  {
+    key: "port",
+    env: "PORT",
+    defaultValue: 8080,
+    schema: integerSchema(1, 65_535),
+    label: "HTTP port",
+    description: "Port used by the hub process when it starts.",
+    category: "Hub",
+    secret: false,
+    valueType: "integer",
+  },
+  {
+    key: "httpsEnabled",
+    env: "HTTPS_ENABLED",
+    defaultValue: false,
+    schema: booleanSchema,
+    label: "HTTPS",
+    description: "Enables HTTPS for the hub process when certificates exist.",
+    category: "Hub",
+    secret: false,
+    valueType: "boolean",
+  },
+  {
+    key: "httpsCertPath",
+    env: "HTTPS_CERT_PATH",
+    defaultValue: "./certs/hub.pfg.local.pem",
+    schema: nonEmptyStringSchema,
+    label: "HTTPS certificate path",
+    description: "Filesystem path to the local HTTPS certificate.",
+    category: "Hub",
+    secret: false,
+    valueType: "string",
+  },
+  {
+    key: "httpsKeyPath",
+    env: "HTTPS_KEY_PATH",
+    defaultValue: "./certs/hub.pfg.local-key.pem",
+    schema: nonEmptyStringSchema,
+    label: "HTTPS private key path",
+    description: "Filesystem path to the local HTTPS private key.",
+    category: "Hub",
+    secret: true,
+    valueType: "string",
+  },
+  {
+    key: "databaseUrl",
+    env: "DATABASE_URL",
+    defaultValue: "postgresql://pfg:pfg@localhost:5432/pfg",
+    schema: nonEmptyStringSchema,
+    label: "Database URL",
+    description:
+      "PostgreSQL connection string used by the hub database provider.",
+    category: "Hub",
+    secret: true,
+    valueType: "string",
+  },
+  {
+    key: "corsOrigins",
+    env: "CORS_ORIGINS",
+    defaultValue: "http://localhost:5173,http://127.0.0.1:5173",
+    schema: nonEmptyStringSchema,
+    label: "CORS origins",
+    description: "Comma-separated browser origins allowed by the hub.",
+    category: "Hub",
+    secret: false,
+    valueType: "string",
+  },
+  {
+    key: "adminKey",
+    env: "ADMIN_KEY",
+    defaultValue: "",
+    schema: z.string(),
+    label: "Admin key",
+    description: "Static token required by admin and seed endpoints.",
+    category: "Security",
+    secret: true,
+    valueType: "string",
+  },
   {
     key: "issueMaxRetries",
     env: "ISSUE_MAX_RETRIES",
@@ -147,6 +229,17 @@ export const RUNTIME_CONFIG_CATALOG = defineCatalog([
     category: "GitHub ingestion",
     secret: false,
     valueType: "integer",
+  },
+  {
+    key: "githubToken",
+    env: "GITHUB_TOKEN",
+    defaultValue: "dummy",
+    schema: nonEmptyStringSchema,
+    label: "GitHub token",
+    description: "Token used for authenticated GitHub API calls.",
+    category: "GitHub API",
+    secret: true,
+    valueType: "string",
   },
   {
     key: "githubMaxRetries",

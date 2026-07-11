@@ -1,26 +1,15 @@
 import "reflect-metadata";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { AppConfig } from "../src/config";
 import { GitHubService } from "../src/github/github.service";
 import {
   RuntimeConfigChange,
   RuntimeConfigService,
 } from "../src/runtime-config/runtime-config.service";
 
-const baseConfig: AppConfig = {
-  corsOrigins: ["http://localhost:5173"],
-  port: 8080,
-  httpsEnabled: false,
-  httpsCertPath: "./certs/hub.pfg.local.pem",
-  httpsKeyPath: "./certs/hub.pfg.local-key.pem",
-  databaseUrl: "postgresql://pfg:pfg@localhost:5432/pfg",
-  githubToken: "test-token",
-  adminKey: "test-admin-key",
-};
-
 type TestRuntimeConfig = {
   issueMaxRetries: number;
   issueMinScore: number;
+  githubToken: string;
   githubIngestionEnabled: boolean;
   githubIngestionCron: string;
   githubRecrawlAfterMs: number;
@@ -34,6 +23,7 @@ type TestRuntimeConfig = {
 const baseRuntimeConfig: TestRuntimeConfig = {
   issueMaxRetries: 3,
   issueMinScore: 60,
+  githubToken: "test-token",
   githubIngestionEnabled: false,
   githubIngestionCron: "0 */6 * * *",
   githubRecrawlAfterMs: 6 * 60 * 60 * 1000,
@@ -259,23 +249,21 @@ describe("GitHubService discovery limits", () => {
   });
 
   it("detects CI, tests and supported ecosystems from the repository tree", async () => {
-    const service = createService();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        jsonResponse(
-          {
-            tree: [
-              { path: ".github/workflows/checks.yml", type: "blob" },
-              { path: "src/widget.spec.ts", type: "blob" },
-              { path: "package.json", type: "blob" },
-              { path: "pyproject.toml", type: "blob" },
-            ],
-          },
-          { "x-ratelimit-remaining": "100" },
-        ),
+    const service = createService({ githubToken: "runtime-token" });
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        {
+          tree: [
+            { path: ".github/workflows/checks.yml", type: "blob" },
+            { path: "src/widget.spec.ts", type: "blob" },
+            { path: "package.json", type: "blob" },
+            { path: "pyproject.toml", type: "blob" },
+          ],
+        },
+        { "x-ratelimit-remaining": "100" },
       ),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     const signals = await callInspectRepository(
       service,
@@ -289,6 +277,14 @@ describe("GitHubService discovery limits", () => {
       testsDetected: true,
       ecosystems: ["npm", "pip"],
     });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer runtime-token",
+        }),
+      }),
+    );
   });
 
   it("reconfigures the ingestion cron when admin runtime values change", async () => {
@@ -325,7 +321,6 @@ describe("GitHubService discovery limits", () => {
     const service = new GitHubService(
       {} as never,
       {} as never,
-      baseConfig,
       runtimeConfigService,
       schedulerRegistry as never,
     );
@@ -357,7 +352,6 @@ function createService(config: Partial<TestRuntimeConfig> = {}): GitHubService {
   return new GitHubService(
     {} as never,
     {} as never,
-    baseConfig,
     runtimeConfigService,
     {} as never,
   );

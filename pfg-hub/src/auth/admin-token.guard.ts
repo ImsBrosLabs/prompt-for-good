@@ -5,7 +5,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
-import { APP_CONFIG, AppConfig } from "../config";
+import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
 
 type RequestWithHeaders = {
   headers: Record<string, string | string[] | undefined>;
@@ -13,11 +13,14 @@ type RequestWithHeaders = {
 
 @Injectable()
 export class AdminTokenGuard implements CanActivate {
-  constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(
+    @Inject(RuntimeConfigService)
+    private readonly runtimeConfigService: RuntimeConfigService,
+  ) {}
 
   /** Allows protected admin endpoints only when X-Admin-Token matches ADMIN_KEY. */
-  canActivate(context: ExecutionContext): boolean {
-    const { adminKey } = this.config;
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const adminKey = await this.runtimeConfigService.get("adminKey");
     const request = context.switchToHttp().getRequest<RequestWithHeaders>();
     const token = request.headers["x-admin-token"];
 

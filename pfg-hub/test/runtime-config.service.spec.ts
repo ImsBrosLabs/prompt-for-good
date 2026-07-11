@@ -115,9 +115,14 @@ describe("RuntimeConfigService", () => {
     await expect(service.get("issueMaxRetries")).resolves.toBe(9);
   });
 
-  it("lists admin-safe entries without infrastructure secrets", async () => {
+  it("lists every catalog entry while keeping secret values hidden", async () => {
     const { service } = createService({
-      env: { ISSUE_MAX_RETRIES: "7", ISSUE_MIN_SCORE: "70" },
+      env: {
+        ADMIN_KEY: "env-admin-key",
+        GITHUB_TOKEN: "env-github-token",
+        ISSUE_MAX_RETRIES: "7",
+        ISSUE_MIN_SCORE: "70",
+      },
       listRows: [override("issueMaxRetries", 5)],
     });
 
@@ -126,8 +131,9 @@ describe("RuntimeConfigService", () => {
 
     expect(keys).toContain("issueMaxRetries");
     expect(keys).toContain("issueMinScore");
-    expect(keys).not.toContain("DATABASE_URL" as RuntimeConfigKey);
-    expect(keys).not.toContain("ADMIN_KEY" as RuntimeConfigKey);
+    expect(keys).toContain("databaseUrl");
+    expect(keys).toContain("adminKey");
+    expect(keys).toContain("githubToken");
     expect(items.find((item) => item.key === "issueMaxRetries")).toMatchObject({
       value: 5,
       environmentValue: "7",
@@ -140,6 +146,38 @@ describe("RuntimeConfigService", () => {
       source: "environment",
       hasDatabaseOverride: false,
     });
+    expect(items.find((item) => item.key === "adminKey")).toMatchObject({
+      value: null,
+      environmentValue: null,
+      source: "environment",
+      hasDatabaseOverride: false,
+      metadata: { secret: true, defaultValue: null },
+    });
+  });
+
+  it("persists secret database overrides without echoing secret values", async () => {
+    const { service, insert } = createService({
+      env: { GITHUB_TOKEN: "env-github-token" },
+    });
+
+    const item = await service.set("githubToken", "db-github-token", "alice");
+
+    expect(insert.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "githubToken",
+        value: "db-github-token",
+        updatedBy: "alice",
+      }),
+    );
+    expect(item).toMatchObject({
+      key: "githubToken",
+      value: null,
+      environmentValue: null,
+      source: "database",
+      hasDatabaseOverride: true,
+      updatedBy: "alice",
+      metadata: { secret: true, defaultValue: null },
+    });
   });
 
   it("rejects keys absent from the catalog", async () => {
@@ -147,7 +185,7 @@ describe("RuntimeConfigService", () => {
 
     await expect(
       service.set(
-        "DATABASE_URL" as RuntimeConfigKey,
+        "MISSING_KEY" as RuntimeConfigKey,
         "postgresql://secret",
         "admin",
       ),

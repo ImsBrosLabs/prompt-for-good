@@ -9,7 +9,6 @@ import { SchedulerRegistry } from "@nestjs/schedule";
 import { CronJob } from "cron";
 import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { APP_CONFIG, AppConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import {
   IngestionRun,
@@ -142,7 +141,6 @@ export class GitHubService
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ScoringService)
     private readonly scoringService: ScoringService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(RuntimeConfigService)
     private readonly runtimeConfigService: RuntimeConfigService,
     @Inject(SchedulerRegistry)
@@ -912,9 +910,10 @@ export class GitHubService
   private async githubRequestWithHeaders<T>(
     pathOrUrl: string,
   ): Promise<GitHubResponseWithHeaders<T>> {
-    const [maxRetries, minRateLimitRemaining] = await Promise.all([
+    const [maxRetries, minRateLimitRemaining, githubToken] = await Promise.all([
       this.runtimeConfigService.get("githubMaxRetries"),
       this.runtimeConfigService.get("githubMinRateLimitRemaining"),
+      this.runtimeConfigService.get("githubToken"),
     ]);
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
@@ -922,7 +921,7 @@ export class GitHubService
       try {
         response = await fetch(this.githubUrl(pathOrUrl), {
           headers: {
-            Authorization: `Bearer ${this.config.githubToken}`,
+            Authorization: `Bearer ${githubToken}`,
             Accept: "application/vnd.github.v3+json",
             "User-Agent": "prompt-for-good-hub",
           },

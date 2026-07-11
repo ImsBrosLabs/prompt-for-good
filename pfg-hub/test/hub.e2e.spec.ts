@@ -150,6 +150,28 @@ describeDb("hub e2e", () => {
     expect(response.body.components.securitySchemes.AdminToken.name).toBe(
       "X-Admin-Token",
     );
+    expect(
+      response.body.components.schemas.RuntimeConfigItemDto.properties.value
+        .oneOf,
+    ).toEqual([
+      { type: "boolean" },
+      { type: "integer" },
+      { type: "string" },
+      { type: "null" },
+    ]);
+    expect(
+      response.body.components.schemas.RuntimeConfigItemDto.properties
+        .environmentValue,
+    ).toMatchObject({ nullable: true, type: "string" });
+    expect(
+      response.body.components.schemas.RuntimeConfigMetadataDto.properties
+        .defaultValue.oneOf,
+    ).toEqual([
+      { type: "boolean" },
+      { type: "integer" },
+      { type: "string" },
+      { type: "null" },
+    ]);
     expect(response.body.paths["/issues/next"].get.security).toEqual([
       { RunnerToken: [] },
     ]);
@@ -290,10 +312,10 @@ describeDb("hub e2e", () => {
 
     expect(keys).toContain("issueMinScore");
     expect(keys).toContain("githubIngestionEnabled");
-    expect(keys).not.toContain("DATABASE_URL");
-    expect(keys).not.toContain("PORT");
-    expect(keys).not.toContain("ADMIN_KEY");
-    expect(keys).not.toContain("GITHUB_TOKEN");
+    expect(keys).toContain("databaseUrl");
+    expect(keys).toContain("port");
+    expect(keys).toContain("adminKey");
+    expect(keys).toContain("githubToken");
     expect(
       configItems.find((item) => item.key === "issueMinScore"),
     ).toMatchObject({
@@ -314,12 +336,17 @@ describeDb("hub e2e", () => {
       source: "default",
       hasDatabaseOverride: false,
     });
-
-    await request(app.getHttpServer())
-      .put("/admin/configuration/DATABASE_URL")
-      .set("X-Admin-Token", adminToken)
-      .send({ value: "postgresql://secret" })
-      .expect(400);
+    expect(configItems.find((item) => item.key === "adminKey")).toMatchObject({
+      value: null,
+      environmentValue: null,
+      source: "environment",
+      hasDatabaseOverride: false,
+      metadata: {
+        env: "ADMIN_KEY",
+        secret: true,
+        category: "Security",
+      },
+    });
 
     await request(app.getHttpServer())
       .put("/admin/configuration/issueMinScore")
@@ -342,6 +369,26 @@ describeDb("hub e2e", () => {
       updatedBy: "alice",
     });
 
+    const secretUpdateResponse = await request(app.getHttpServer())
+      .put("/admin/configuration/githubToken")
+      .set("X-Admin-Token", adminToken)
+      .set("X-Admin-User", "alice")
+      .send({ value: "db-github-token" })
+      .expect(200);
+    expect(secretUpdateResponse.body).toMatchObject({
+      key: "githubToken",
+      value: null,
+      environmentValue: null,
+      source: "database",
+      hasDatabaseOverride: true,
+      updatedBy: "alice",
+      metadata: {
+        env: "GITHUB_TOKEN",
+        secret: true,
+        category: "GitHub API",
+      },
+    });
+
     const [override] = await db
       .select()
       .from(runtimeConfigOverrides)
@@ -350,6 +397,17 @@ describeDb("hub e2e", () => {
     expect(override).toMatchObject({
       key: "issueMinScore",
       value: 75,
+      updatedBy: "alice",
+    });
+
+    const [secretOverride] = await db
+      .select()
+      .from(runtimeConfigOverrides)
+      .where(eq(runtimeConfigOverrides.key, "githubToken"))
+      .limit(1);
+    expect(secretOverride).toMatchObject({
+      key: "githubToken",
+      value: "db-github-token",
       updatedBy: "alice",
     });
 
