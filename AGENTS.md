@@ -14,3 +14,9 @@ or error-handling behavior, and business-rule decisions.
 The comment must explain the function's intent, important invariants, or why a
 decision is made. Do not add comments that merely restate straightforward code.
 Small functions with a single obvious operation do not need a comment.
+
+## Repository Language
+
+Write repository-facing text in English, including UI copy, API documentation,
+test fixtures, comments, commit messages, and docs, unless a task explicitly
+requires another language.

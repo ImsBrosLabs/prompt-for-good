@@ -7,10 +7,10 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { APP_CONFIG, AppConfig } from "../config";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, Issue, issues, repos } from "../db/schema";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
+import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
 import { RunnersService } from "../runners/runners.service";
 import { ScoringService } from "../scoring/scoring.service";
 
@@ -31,7 +31,8 @@ export class IssuesService {
     private readonly runnersService: RunnersService,
     @Inject(ScoringService)
     private readonly scoringService: ScoringService,
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(RuntimeConfigService)
+    private readonly runtimeConfigService: RuntimeConfigService,
   ) {}
 
   /** Returns the highest-affinity pending issue available to a valid runner. */
@@ -125,8 +126,10 @@ export class IssuesService {
     const retryCount = request.success
       ? issue.retryCount
       : issue.retryCount + 1;
+    const issueMaxRetries =
+      await this.runtimeConfigService.get("issueMaxRetries");
     const nextStatus =
-      !request.success && retryCount < this.config.issueMaxRetries
+      !request.success && retryCount < issueMaxRetries
         ? "PENDING"
         : request.success
           ? "DONE"

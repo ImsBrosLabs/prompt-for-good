@@ -26,6 +26,7 @@ import {
   issues,
   repos,
   runners,
+  runtimeConfigOverrides,
 } from "../src/db/schema";
 import type { IssueStatus } from "../src/db/schema";
 import { GlobalExceptionFilter } from "../src/errors/global-exception.filter";
@@ -64,12 +65,14 @@ describeDb("hub e2e", () => {
   const originalIssueMaxRetries = process.env.ISSUE_MAX_RETRIES;
   const originalIssueMinScore = process.env.ISSUE_MIN_SCORE;
   const originalGithubToken = process.env.GITHUB_TOKEN;
+  const originalGithubIngestionEnabled = process.env.GITHUB_INGESTION_ENABLED;
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = adminToken;
     process.env.ISSUE_MAX_RETRIES = "3";
     process.env.ISSUE_MIN_SCORE = "60";
     process.env.GITHUB_TOKEN = "test-github-token";
+    delete process.env.GITHUB_INGESTION_ENABLED;
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -105,6 +108,7 @@ describeDb("hub e2e", () => {
     restoreEnv("ISSUE_MAX_RETRIES", originalIssueMaxRetries);
     restoreEnv("ISSUE_MIN_SCORE", originalIssueMinScore);
     restoreEnv("GITHUB_TOKEN", originalGithubToken);
+    restoreEnv("GITHUB_INGESTION_ENABLED", originalGithubIngestionEnabled);
     await app?.close();
   });
 
@@ -134,6 +138,8 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/admin/issues"]).toBeDefined();
     expect(response.body.paths["/admin/runners"]).toBeDefined();
     expect(response.body.paths["/admin/contributions"]).toBeDefined();
+    expect(response.body.paths["/admin/configuration"]).toBeDefined();
+    expect(response.body.paths["/admin/configuration/{key}"]).toBeDefined();
     expect(response.body.paths["/seed/default"]).toBeDefined();
     expect(response.body.paths["/seed/repo"]).toBeDefined();
     expect(response.body.paths["/seed/discover"]).toBeDefined();
@@ -263,6 +269,108 @@ describeDb("hub e2e", () => {
       total: 1,
       data: [{ id: "contribution-1", tokensUsed: 250 }],
     });
+  });
+
+  it("serves and mutates runtime configuration through protected admin endpoints", async () => {
+    await request(app.getHttpServer()).get("/admin/configuration").expect(401);
+
+    const listResponse = await request(app.getHttpServer())
+      .get("/admin/configuration")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+    const configItems = listResponse.body.data as Array<{
+      key: string;
+      value: unknown;
+      environmentValue: string | null;
+      source: string;
+      hasDatabaseOverride: boolean;
+      metadata: { env: string; secret: boolean; category: string };
+    }>;
+    const keys = configItems.map((item) => item.key);
+
+    expect(keys).toContain("issueMinScore");
+    expect(keys).toContain("githubIngestionEnabled");
+    expect(keys).not.toContain("DATABASE_URL");
+    expect(keys).not.toContain("PORT");
+    expect(keys).not.toContain("ADMIN_KEY");
+    expect(keys).not.toContain("GITHUB_TOKEN");
+    expect(
+      configItems.find((item) => item.key === "issueMinScore"),
+    ).toMatchObject({
+      value: 60,
+      environmentValue: "60",
+      source: "environment",
+      hasDatabaseOverride: false,
+      metadata: {
+        env: "ISSUE_MIN_SCORE",
+        secret: false,
+        category: "Issues",
+      },
+    });
+    expect(
+      configItems.find((item) => item.key === "githubIngestionEnabled"),
+    ).toMatchObject({
+      value: false,
+      source: "default",
+      hasDatabaseOverride: false,
+    });
+
+    await request(app.getHttpServer())
+      .put("/admin/configuration/DATABASE_URL")
+      .set("X-Admin-Token", adminToken)
+      .send({ value: "postgresql://secret" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .put("/admin/configuration/issueMinScore")
+      .set("X-Admin-Token", adminToken)
+      .send({ value: 150 })
+      .expect(400);
+
+    const updateResponse = await request(app.getHttpServer())
+      .put("/admin/configuration/issueMinScore")
+      .set("X-Admin-Token", adminToken)
+      .set("X-Admin-User", "alice")
+      .send({ value: 75 })
+      .expect(200);
+    expect(updateResponse.body).toMatchObject({
+      key: "issueMinScore",
+      value: 75,
+      environmentValue: "60",
+      source: "database",
+      hasDatabaseOverride: true,
+      updatedBy: "alice",
+    });
+
+    const [override] = await db
+      .select()
+      .from(runtimeConfigOverrides)
+      .where(eq(runtimeConfigOverrides.key, "issueMinScore"))
+      .limit(1);
+    expect(override).toMatchObject({
+      key: "issueMinScore",
+      value: 75,
+      updatedBy: "alice",
+    });
+
+    const resetResponse = await request(app.getHttpServer())
+      .delete("/admin/configuration/issueMinScore")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+    expect(resetResponse.body).toMatchObject({
+      key: "issueMinScore",
+      value: 60,
+      environmentValue: "60",
+      source: "environment",
+      hasDatabaseOverride: false,
+      updatedBy: null,
+    });
+
+    const remainingOverrides = await db
+      .select()
+      .from(runtimeConfigOverrides)
+      .where(eq(runtimeConfigOverrides.key, "issueMinScore"));
+    expect(remainingOverrides).toEqual([]);
   });
 
   it("registers a runner through the HTTP API and persists only trimmed public input", async () => {
@@ -1176,7 +1284,7 @@ describeDb("hub e2e", () => {
 
   async function truncateDb(): Promise<void> {
     await pool.query(
-      "TRUNCATE ingestion_runs, contributions, issues, runners, repos RESTART IDENTITY CASCADE",
+      "TRUNCATE runtime_config_override, ingestion_runs, contributions, issues, runners, repos RESTART IDENTITY CASCADE",
     );
   }
 

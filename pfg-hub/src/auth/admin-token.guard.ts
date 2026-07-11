@@ -15,7 +15,7 @@ type RequestWithHeaders = {
 export class AdminTokenGuard implements CanActivate {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  /** Allows seed endpoints only when X-Admin-Token matches ADMIN_KEY. */
+  /** Allows protected admin endpoints only when X-Admin-Token matches ADMIN_KEY. */
   canActivate(context: ExecutionContext): boolean {
     const { adminKey } = this.config;
     const request = context.switchToHttp().getRequest<RequestWithHeaders>();

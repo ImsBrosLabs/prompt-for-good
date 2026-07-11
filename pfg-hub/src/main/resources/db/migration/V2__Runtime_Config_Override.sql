@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS runtime_config_override (
+    key VARCHAR(128) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255)
+);

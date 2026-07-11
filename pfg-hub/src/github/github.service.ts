@@ -19,6 +19,7 @@ import {
   issues,
   repos,
 } from "../db/schema";
+import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
 import { ScoringService } from "../scoring/scoring.service";
 
 type GitHubRepoResponse = {
@@ -126,6 +127,8 @@ export class GitHubService
   private readonly logger = new Logger(GitHubService.name);
   private readonly ingestionCronName = "github-ingestion";
   private ingestionRunning = false;
+  private configureIngestionCronPromise: Promise<void> = Promise.resolve();
+  private unsubscribeRuntimeConfigChanges: (() => void) | null = null;
   private readonly rateLimitRemainingByResource = new Map<
     GitHubRateLimitResource,
     number
@@ -140,18 +143,62 @@ export class GitHubService
     @Inject(ScoringService)
     private readonly scoringService: ScoringService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(RuntimeConfigService)
+    private readonly runtimeConfigService: RuntimeConfigService,
     @Inject(SchedulerRegistry)
     private readonly schedulerRegistry: SchedulerRegistry,
   ) {}
 
-  onApplicationBootstrap(): void {
-    if (!this.config.githubIngestionEnabled) {
+  /** Subscribes to runtime config changes and configures the optional ingestion cron. */
+  async onApplicationBootstrap(): Promise<void> {
+    this.unsubscribeRuntimeConfigChanges = this.runtimeConfigService.onChange(
+      (change) => {
+        if (
+          change.key === "githubIngestionEnabled" ||
+          change.key === "githubIngestionCron"
+        ) {
+          return this.queueIngestionCronConfiguration();
+        }
+      },
+    );
+
+    await this.queueIngestionCronConfiguration();
+  }
+
+  /** Removes the runtime listener and stops the scheduled ingestion job. */
+  onApplicationShutdown(): void {
+    this.unsubscribeRuntimeConfigChanges?.();
+    this.unsubscribeRuntimeConfigChanges = null;
+    this.stopIngestionCron();
+  }
+
+  /** Serializes cron reconfiguration so rapid admin edits cannot double-register jobs. */
+  private queueIngestionCronConfiguration(): Promise<void> {
+    this.configureIngestionCronPromise =
+      this.configureIngestionCronPromise.then(
+        () => this.configureIngestionCron(),
+        () => this.configureIngestionCron(),
+      );
+    return this.configureIngestionCronPromise;
+  }
+
+  /** Rebuilds the scheduler job from the current effective runtime values. */
+  private async configureIngestionCron(): Promise<void> {
+    const ingestionEnabled = await this.runtimeConfigService.get(
+      "githubIngestionEnabled",
+    );
+    this.stopIngestionCron();
+
+    if (!ingestionEnabled) {
       this.logger.log("GitHub ingestion cron disabled");
       return;
     }
+    const ingestionCron = await this.runtimeConfigService.get(
+      "githubIngestionCron",
+    );
 
     const job = CronJob.from({
-      cronTime: this.config.githubIngestionCron,
+      cronTime: ingestionCron,
       onTick: () => {
         void this.enqueueIngestion().catch((error) => {
           this.logger.error(
@@ -163,14 +210,11 @@ export class GitHubService
     });
     this.schedulerRegistry.addCronJob(this.ingestionCronName, job);
     job.start();
-    this.logger.log(
-      `GitHub ingestion cron scheduled (${this.config.githubIngestionCron})`,
-    );
+    this.logger.log(`GitHub ingestion cron scheduled (${ingestionCron})`);
   }
 
-  onApplicationShutdown(): void {
-    if (!this.config.githubIngestionEnabled) return;
-
+  /** Stops and unregisters the cron job when present; missing jobs are harmless. */
+  private stopIngestionCron(): void {
     try {
       const job = this.schedulerRegistry.getCronJob(this.ingestionCronName);
       job.stop();
@@ -422,6 +466,15 @@ export class GitHubService
   async discoverRepositories(
     details: GitHubIngestionDetails = this.createIngestionDetails(),
   ): Promise<GitHubDiscoveryResult> {
+    const [
+      discoveryMaxPagesPerLabel,
+      discoveryMaxRepositories,
+      minRateLimitRemaining,
+    ] = await Promise.all([
+      this.runtimeConfigService.get("githubDiscoveryMaxPagesPerLabel"),
+      this.runtimeConfigService.get("githubDiscoveryMaxRepositories"),
+      this.runtimeConfigService.get("githubMinRateLimitRemaining"),
+    ]);
     const discovered = new Map<string, { owner: string; name: string }>();
     this.logger.log(
       `Discovering GitHub repositories from labels=${this.discoveryLabels.join(",")}`,
@@ -437,7 +490,7 @@ export class GitHubService
       };
       details.labels.push(labelDetail);
 
-      if (this.isGithubQuotaLow("search")) {
+      if (this.isGithubQuotaLow("search", minRateLimitRemaining)) {
         labelDetail.stoppedReason = "search_quota_low";
         this.logger.warn(
           `Stopping GitHub discovery before label="${label}" because search quota is low remaining=${this.githubQuotaRemaining("search")}`,
@@ -454,7 +507,7 @@ export class GitHubService
       }).toString()}`;
       const pages =
         await this.githubRequestPaginated<GitHubSearchIssuesResponse>(path, {
-          maxPages: this.config.githubDiscoveryMaxPagesPerLabel,
+          maxPages: discoveryMaxPagesPerLabel,
         });
       labelDetail.pages = pages.length;
       let discoveredForLabel = 0;
@@ -476,15 +529,15 @@ export class GitHubService
           discoveredForLabel += 1;
           labelDetail.repositoryHits += 1;
 
-          if (discovered.size >= this.config.githubDiscoveryMaxRepositories) {
+          if (discovered.size >= discoveryMaxRepositories) {
             labelDetail.stoppedReason = "repository_limit";
             this.logger.log(
-              `GitHub discovery repository limit reached maxRepositories=${this.config.githubDiscoveryMaxRepositories}`,
+              `GitHub discovery repository limit reached maxRepositories=${discoveryMaxRepositories}`,
             );
             break;
           }
         }
-        if (discovered.size >= this.config.githubDiscoveryMaxRepositories) {
+        if (discovered.size >= discoveryMaxRepositories) {
           break;
         }
       }
@@ -492,7 +545,7 @@ export class GitHubService
         `GitHub discovery label="${label}" pages=${pages.length} repositoryHits=${discoveredForLabel} skippedPullRequests=${labelDetail.skippedPullRequests} skippedInvalidRepositoryUrls=${labelDetail.skippedInvalidRepositoryUrls}`,
       );
 
-      if (discovered.size >= this.config.githubDiscoveryMaxRepositories) {
+      if (discovered.size >= discoveryMaxRepositories) {
         break;
       }
     }
@@ -502,7 +555,7 @@ export class GitHubService
     let skippedPullRequests = 0;
     let failedRepositories = 0;
     for (const repo of discovered.values()) {
-      if (this.isGithubQuotaLow("core")) {
+      if (this.isGithubQuotaLow("core", minRateLimitRemaining)) {
         details.warnings.push(
           "Stopped repository seeding because core quota is low",
         );
@@ -563,6 +616,7 @@ export class GitHubService
 
   /** Fetches open GitHub issues for a repository and stores qualifying ones. */
   async crawlRepo(repoId: string): Promise<GitHubCrawlResult> {
+    const issueMinScore = await this.runtimeConfigService.get("issueMinScore");
     const [repo] = await this.db
       .select()
       .from(repos)
@@ -612,7 +666,7 @@ export class GitHubService
       };
       const assessment = this.scoringService.assessIssue(candidate);
 
-      if (assessment.score >= this.config.issueMinScore) {
+      if (assessment.score >= issueMinScore) {
         await this.db.insert(issues).values({
           id: randomUUID(),
           repoId: repo.id,
@@ -737,6 +791,10 @@ export class GitHubService
     skippedPullRequests: number;
     failedRepositories: number;
   }> {
+    const [recrawlAfterMs, minRateLimitRemaining] = await Promise.all([
+      this.runtimeConfigService.get("githubRecrawlAfterMs"),
+      this.runtimeConfigService.get("githubMinRateLimitRemaining"),
+    ]);
     const now = Date.now();
     const knownRepos = await this.db.select().from(repos);
     let recrawledRepos = 0;
@@ -748,11 +806,11 @@ export class GitHubService
       if (!repo.eligible) continue;
       if (
         repo.lastCrawledAt &&
-        now - repo.lastCrawledAt.getTime() < this.config.githubRecrawlAfterMs
+        now - repo.lastCrawledAt.getTime() < recrawlAfterMs
       ) {
         continue;
       }
-      if (this.isGithubQuotaLow("core")) {
+      if (this.isGithubQuotaLow("core", minRateLimitRemaining)) {
         this.logger.warn(
           `Stopping GitHub recrawl because core quota is low remaining=${this.githubQuotaRemaining("core")}`,
         );
@@ -818,6 +876,9 @@ export class GitHubService
     path: string,
     options: GitHubPageOptions = {},
   ): Promise<T[]> {
+    const minRateLimitRemaining = await this.runtimeConfigService.get(
+      "githubMinRateLimitRemaining",
+    );
     const pages: T[] = [];
     let nextPathOrUrl: string | null = path;
 
@@ -833,7 +894,9 @@ export class GitHubService
         }
         break;
       }
-      if (this.isGithubQuotaLow(response.rateLimitResource)) {
+      if (
+        this.isGithubQuotaLow(response.rateLimitResource, minRateLimitRemaining)
+      ) {
         this.logger.warn(
           `Stopping GitHub pagination because ${response.rateLimitResource} quota is low remaining=${this.githubQuotaRemaining(response.rateLimitResource)} path=${this.redactUrl(path)}`,
         );
@@ -845,14 +908,16 @@ export class GitHubService
     return pages;
   }
 
+  /** Performs a GitHub request with dynamic retry and quota thresholds. */
   private async githubRequestWithHeaders<T>(
     pathOrUrl: string,
   ): Promise<GitHubResponseWithHeaders<T>> {
-    for (
-      let attempt = 0;
-      attempt <= this.config.githubMaxRetries;
-      attempt += 1
-    ) {
+    const [maxRetries, minRateLimitRemaining] = await Promise.all([
+      this.runtimeConfigService.get("githubMaxRetries"),
+      this.runtimeConfigService.get("githubMinRateLimitRemaining"),
+    ]);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       let response: Response;
       try {
         response = await fetch(this.githubUrl(pathOrUrl), {
@@ -863,7 +928,7 @@ export class GitHubService
           },
         });
       } catch (error) {
-        if (attempt < this.config.githubMaxRetries) {
+        if (attempt < maxRetries) {
           await this.backoffAfterNetworkError(attempt, error);
           continue;
         }
@@ -878,7 +943,7 @@ export class GitHubService
           this.rateLimitRemainingByResource.get(rateLimitResource);
         if (
           rateLimitRemaining !== undefined &&
-          rateLimitRemaining <= this.config.githubMinRateLimitRemaining
+          rateLimitRemaining <= minRateLimitRemaining
         ) {
           this.logger.warn(
             `GitHub API quota running low remaining=${rateLimitRemaining} path=${this.redactUrl(pathOrUrl)}`,
@@ -901,10 +966,7 @@ export class GitHubService
         );
       }
 
-      if (
-        attempt < this.config.githubMaxRetries &&
-        this.isRetryableResponse(response)
-      ) {
+      if (attempt < maxRetries && this.isRetryableResponse(response)) {
         await this.backoff(attempt, response);
         continue;
       }
@@ -950,12 +1012,12 @@ export class GitHubService
     );
   }
 
-  private isGithubQuotaLow(resource: GitHubRateLimitResource): boolean {
+  private isGithubQuotaLow(
+    resource: GitHubRateLimitResource,
+    minRateLimitRemaining: number,
+  ): boolean {
     const remaining = this.rateLimitRemainingByResource.get(resource);
-    return (
-      remaining !== undefined &&
-      remaining <= this.config.githubMinRateLimitRemaining
-    );
+    return remaining !== undefined && remaining <= minRateLimitRemaining;
   }
 
   private githubQuotaRemaining(
@@ -1030,8 +1092,9 @@ export class GitHubService
     );
   }
 
+  /** Sleeps after retryable HTTP responses using server guidance before fallback jitter. */
   private async backoff(attempt: number, response: Response): Promise<void> {
-    const delayMs = this.backoffDelayMs(attempt, response);
+    const delayMs = await this.backoffDelayMs(attempt, response);
 
     this.logger.warn(
       `Retrying GitHub request after ${delayMs}ms following ${response.status}`,
@@ -1039,11 +1102,15 @@ export class GitHubService
     await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
   }
 
+  /** Sleeps after transient network failures using the current backoff setting. */
   private async backoffAfterNetworkError(
     attempt: number,
     error: unknown,
   ): Promise<void> {
-    const delayMs = this.exponentialBackoffWithJitterMs(attempt);
+    const baseDelayMs = await this.runtimeConfigService.get(
+      "githubBackoffBaseMs",
+    );
+    const delayMs = this.exponentialBackoffWithJitterMs(attempt, baseDelayMs);
 
     this.logger.warn(
       `Retrying GitHub request after ${delayMs}ms following network error=${this.errorMessage(error)}`,
@@ -1051,7 +1118,11 @@ export class GitHubService
     await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
   }
 
-  private backoffDelayMs(attempt: number, response: Response): number {
+  /** Chooses retry-after, primary rate-limit reset, or dynamic exponential backoff. */
+  private async backoffDelayMs(
+    attempt: number,
+    response: Response,
+  ): Promise<number> {
     const retryAfter = Number(response.headers?.get("retry-after") ?? 0);
     if (Number.isFinite(retryAfter) && retryAfter > 0) {
       return retryAfter * 1000;
@@ -1066,11 +1137,17 @@ export class GitHubService
       return Math.max(rateLimitReset * 1000 - Date.now(), 0);
     }
 
-    return this.exponentialBackoffWithJitterMs(attempt);
+    const baseDelayMs = await this.runtimeConfigService.get(
+      "githubBackoffBaseMs",
+    );
+    return this.exponentialBackoffWithJitterMs(attempt, baseDelayMs);
   }
 
-  private exponentialBackoffWithJitterMs(attempt: number): number {
-    const baseDelayMs = this.config.githubBackoffBaseMs;
+  /** Adds bounded jitter to dynamic exponential backoff to avoid retry bursts. */
+  private exponentialBackoffWithJitterMs(
+    attempt: number,
+    baseDelayMs: number,
+  ): number {
     const exponentialDelayMs = baseDelayMs * 2 ** attempt;
     const jitterCeilingMs = Math.max(1, Math.min(baseDelayMs, 250));
     return exponentialDelayMs + Math.floor(Math.random() * jitterCeilingMs);

@@ -32,7 +32,7 @@ export function configureOpenApi(app: INestApplication): void {
         in: "header",
         name: "X-Admin-Token",
         description:
-          "Static admin secret configured via the ADMIN_KEY environment variable on the hub. Required for all /seed/** endpoints.",
+          "Static admin secret configured via the ADMIN_KEY environment variable on the hub. Required for all /admin/** and /seed/** endpoints.",
       },
       "AdminToken",
     )

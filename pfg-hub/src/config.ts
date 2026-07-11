@@ -1,4 +1,5 @@
 import { Global, Module } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 
 export type AppConfig = {
   port: number;
@@ -8,52 +9,38 @@ export type AppConfig = {
   databaseUrl: string;
   githubToken: string;
   adminKey: string;
-  issueMaxRetries: number;
-  issueMinScore: number;
-  githubIngestionEnabled: boolean;
-  githubIngestionCron: string;
-  githubRecrawlAfterMs: number;
-  githubMaxRetries: number;
-  githubBackoffBaseMs: number;
-  githubDiscoveryMaxPagesPerLabel: number;
-  githubDiscoveryMaxRepositories: number;
-  githubMinRateLimitRemaining: number;
   corsOrigins: string[];
 };
 
 export const APP_CONFIG = Symbol("APP_CONFIG");
 
-/** Reads runtime settings from the environment and applies local defaults. */
-export function loadConfig(): AppConfig {
+type EnvReader = Pick<ConfigService, "get">;
+
+function readEnv(
+  configService: EnvReader | undefined,
+  key: string,
+): string | undefined {
+  return configService?.get<string>(key) ?? process.env[key];
+}
+
+/** Reads infrastructure settings from @nestjs/config and applies local defaults. */
+export function loadConfig(configService?: EnvReader): AppConfig {
   return {
-    port: Number(process.env.PORT ?? 8080),
-    httpsEnabled: process.env.HTTPS_ENABLED === "true",
-    httpsCertPath: process.env.HTTPS_CERT_PATH ?? "./certs/hub.pfg.local.pem",
-    httpsKeyPath: process.env.HTTPS_KEY_PATH ?? "./certs/hub.pfg.local-key.pem",
+    port: Number(readEnv(configService, "PORT") ?? 8080),
+    httpsEnabled: readEnv(configService, "HTTPS_ENABLED") === "true",
+    httpsCertPath:
+      readEnv(configService, "HTTPS_CERT_PATH") ?? "./certs/hub.pfg.local.pem",
+    httpsKeyPath:
+      readEnv(configService, "HTTPS_KEY_PATH") ??
+      "./certs/hub.pfg.local-key.pem",
     databaseUrl:
-      process.env.DATABASE_URL ?? "postgresql://pfg:pfg@localhost:5432/pfg",
-    githubToken: process.env.GITHUB_TOKEN ?? "dummy",
-    adminKey: process.env.ADMIN_KEY ?? "",
-    issueMaxRetries: Number(process.env.ISSUE_MAX_RETRIES ?? 3),
-    issueMinScore: Number(process.env.ISSUE_MIN_SCORE ?? 60),
-    githubIngestionEnabled: process.env.GITHUB_INGESTION_ENABLED === "true",
-    githubIngestionCron: process.env.GITHUB_INGESTION_CRON ?? "0 */6 * * *",
-    githubRecrawlAfterMs: Number(
-      process.env.GITHUB_RECRAWL_AFTER_MS ?? 6 * 60 * 60 * 1000,
-    ),
-    githubMaxRetries: Number(process.env.GITHUB_MAX_RETRIES ?? 3),
-    githubBackoffBaseMs: Number(process.env.GITHUB_BACKOFF_BASE_MS ?? 1000),
-    githubDiscoveryMaxPagesPerLabel: Number(
-      process.env.GITHUB_DISCOVERY_MAX_PAGES_PER_LABEL ?? 2,
-    ),
-    githubDiscoveryMaxRepositories: Number(
-      process.env.GITHUB_DISCOVERY_MAX_REPOSITORIES ?? 50,
-    ),
-    githubMinRateLimitRemaining: Number(
-      process.env.GITHUB_MIN_RATE_LIMIT_REMAINING ?? 5,
-    ),
+      readEnv(configService, "DATABASE_URL") ??
+      "postgresql://pfg:pfg@localhost:5432/pfg",
+    githubToken: readEnv(configService, "GITHUB_TOKEN") ?? "dummy",
+    adminKey: readEnv(configService, "ADMIN_KEY") ?? "",
     corsOrigins: (
-      process.env.CORS_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173"
+      readEnv(configService, "CORS_ORIGINS") ??
+      "http://localhost:5173,http://127.0.0.1:5173"
     )
       .split(",")
       .map((origin) => origin.trim())
@@ -63,9 +50,11 @@ export function loadConfig(): AppConfig {
 
 @Global()
 @Module({
+  imports: [ConfigModule.forRoot({ ignoreEnvFile: true, isGlobal: true })],
   providers: [
     {
       provide: APP_CONFIG,
+      inject: [ConfigService],
       useFactory: loadConfig,
     },
   ],

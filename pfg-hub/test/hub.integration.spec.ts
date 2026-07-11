@@ -37,7 +37,7 @@ describeDb("hub integration", () => {
 
   beforeEach(async () => {
     await pool.query(
-      "TRUNCATE ingestion_runs, contributions, issues, runners, repos RESTART IDENTITY CASCADE",
+      "TRUNCATE runtime_config_override, ingestion_runs, contributions, issues, runners, repos RESTART IDENTITY CASCADE",
     );
   });
 

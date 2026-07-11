@@ -2,6 +2,10 @@ import "reflect-metadata";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { AppConfig } from "../src/config";
 import { GitHubService } from "../src/github/github.service";
+import {
+  RuntimeConfigChange,
+  RuntimeConfigService,
+} from "../src/runtime-config/runtime-config.service";
 
 const baseConfig: AppConfig = {
   corsOrigins: ["http://localhost:5173"],
@@ -12,6 +16,22 @@ const baseConfig: AppConfig = {
   databaseUrl: "postgresql://pfg:pfg@localhost:5432/pfg",
   githubToken: "test-token",
   adminKey: "test-admin-key",
+};
+
+type TestRuntimeConfig = {
+  issueMaxRetries: number;
+  issueMinScore: number;
+  githubIngestionEnabled: boolean;
+  githubIngestionCron: string;
+  githubRecrawlAfterMs: number;
+  githubMaxRetries: number;
+  githubBackoffBaseMs: number;
+  githubDiscoveryMaxPagesPerLabel: number;
+  githubDiscoveryMaxRepositories: number;
+  githubMinRateLimitRemaining: number;
+};
+
+const baseRuntimeConfig: TestRuntimeConfig = {
   issueMaxRetries: 3,
   issueMinScore: 60,
   githubIngestionEnabled: false,
@@ -208,9 +228,9 @@ describe("GitHubService discovery limits", () => {
     );
   });
 
-  it("uses retry-after before exponential backoff jitter", () => {
+  it("uses retry-after before exponential backoff jitter", async () => {
     const service = createService();
-    const delayMs = callBackoffDelayMs(
+    const delayMs = await callBackoffDelayMs(
       service,
       responseWithHeaders(403, {
         "retry-after": "2",
@@ -221,11 +241,11 @@ describe("GitHubService discovery limits", () => {
     expect(delayMs).toBe(2000);
   });
 
-  it("uses x-ratelimit-reset when primary quota is exhausted", () => {
+  it("uses x-ratelimit-reset when primary quota is exhausted", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const service = createService();
-    const delayMs = callBackoffDelayMs(
+    const delayMs = await callBackoffDelayMs(
       service,
       responseWithHeaders(429, {
         "x-ratelimit-remaining": "0",
@@ -270,13 +290,75 @@ describe("GitHubService discovery limits", () => {
       ecosystems: ["npm", "pip"],
     });
   });
+
+  it("reconfigures the ingestion cron when admin runtime values change", async () => {
+    const runtimeConfig = { ...baseRuntimeConfig };
+    let listener:
+      ((change: RuntimeConfigChange) => void | Promise<void>) | undefined;
+    const runtimeConfigService = {
+      get: vi.fn(async (key: keyof TestRuntimeConfig) => runtimeConfig[key]),
+      onChange: vi.fn(
+        (
+          registeredListener: (
+            change: RuntimeConfigChange,
+          ) => void | Promise<void>,
+        ) => {
+          listener = registeredListener;
+          return vi.fn();
+        },
+      ),
+    } as unknown as RuntimeConfigService;
+    const jobs = new Map<string, { stop: () => void }>();
+    const schedulerRegistry = {
+      addCronJob: vi.fn((name: string, job: { stop: () => void }) => {
+        jobs.set(name, job);
+      }),
+      getCronJob: vi.fn((name: string) => {
+        const job = jobs.get(name);
+        if (!job) throw new Error("Missing cron job");
+        return job;
+      }),
+      deleteCronJob: vi.fn((name: string) => {
+        jobs.delete(name);
+      }),
+    };
+    const service = new GitHubService(
+      {} as never,
+      {} as never,
+      baseConfig,
+      runtimeConfigService,
+      schedulerRegistry as never,
+    );
+
+    await service.onApplicationBootstrap();
+    expect(schedulerRegistry.addCronJob).not.toHaveBeenCalled();
+
+    runtimeConfig.githubIngestionEnabled = true;
+    await listener?.({ key: "githubIngestionEnabled", operation: "set" });
+    expect(schedulerRegistry.addCronJob).toHaveBeenCalledTimes(1);
+
+    runtimeConfig.githubIngestionCron = "0 */2 * * *";
+    await listener?.({ key: "githubIngestionCron", operation: "set" });
+    expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
+      "github-ingestion",
+    );
+    expect(schedulerRegistry.addCronJob).toHaveBeenCalledTimes(2);
+
+    service.onApplicationShutdown();
+  });
 });
 
-function createService(config: Partial<AppConfig> = {}): GitHubService {
+function createService(config: Partial<TestRuntimeConfig> = {}): GitHubService {
+  const runtimeConfig = { ...baseRuntimeConfig, ...config };
+  const runtimeConfigService = {
+    get: vi.fn(async (key: keyof TestRuntimeConfig) => runtimeConfig[key]),
+  } as unknown as RuntimeConfigService;
+
   return new GitHubService(
     {} as never,
     {} as never,
-    { ...baseConfig, ...config },
+    baseConfig,
+    runtimeConfigService,
     {} as never,
   );
 }
@@ -337,10 +419,10 @@ function responseWithHeaders(
 function callBackoffDelayMs(
   service: GitHubService,
   response: Response,
-): number {
+): Promise<number> {
   return (
     service as unknown as {
-      backoffDelayMs(attempt: number, response: Response): number;
+      backoffDelayMs(attempt: number, response: Response): Promise<number>;
     }
   ).backoffDelayMs(0, response);
 }

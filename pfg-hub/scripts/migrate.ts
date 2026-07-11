@@ -1,21 +1,21 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 import { loadConfig } from "../src/config";
 
-/** Applies the initial SQL schema to the configured PostgreSQL database. */
+/** Applies every idempotent SQL migration to the configured PostgreSQL database. */
 async function main() {
   const pool = new pg.Pool({ connectionString: loadConfig().databaseUrl });
-  const sql = readFileSync(
-    join(
-      process.cwd(),
-      "src/main/resources/db/migration/V1__Initial_Schema.sql",
-    ),
-    "utf8",
-  );
+  const migrationDir = join(process.cwd(), "src/main/resources/db/migration");
+  const migrations = readdirSync(migrationDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
 
   try {
-    await pool.query(sql);
+    for (const migration of migrations) {
+      const sql = readFileSync(join(migrationDir, migration), "utf8");
+      await pool.query(sql);
+    }
   } finally {
     await pool.end();
   }

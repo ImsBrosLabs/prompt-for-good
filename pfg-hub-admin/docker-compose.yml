@@ -10,6 +10,9 @@ services:
         required: false
     environment:
       PFG_HUB_PROXY_HOST: host.docker.internal
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_USE_POLLING: "true"
+      VITE_POLL_INTERVAL: "100"
     ports:
       - "${PFG_HUB_ADMIN_PORT:-5173}:5173"
     volumes:
