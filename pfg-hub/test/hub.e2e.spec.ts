@@ -79,6 +79,11 @@ describeDb("hub e2e", () => {
       new FastifyAdapter(),
     );
     app.useGlobalFilters(new GlobalExceptionFilter());
+    app.enableCors({
+      origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+      credentials: true,
+      allowedHeaders: ["Content-Type", "X-Admin-Token"],
+    });
     configureOpenApi(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
@@ -124,6 +129,11 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/issues/{id}/claim"]).toBeDefined();
     expect(response.body.paths["/issues/{id}/done"]).toBeDefined();
     expect(response.body.paths["/stats"]).toBeDefined();
+    expect(response.body.paths["/admin/session"]).toBeDefined();
+    expect(response.body.paths["/admin/repositories"]).toBeDefined();
+    expect(response.body.paths["/admin/issues"]).toBeDefined();
+    expect(response.body.paths["/admin/runners"]).toBeDefined();
+    expect(response.body.paths["/admin/contributions"]).toBeDefined();
     expect(response.body.paths["/seed/default"]).toBeDefined();
     expect(response.body.paths["/seed/repo"]).toBeDefined();
     expect(response.body.paths["/seed/discover"]).toBeDefined();
@@ -161,6 +171,98 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/seed/ingestion-runs"].get.security).toEqual([
       { AdminToken: [] },
     ]);
+  });
+
+  it("serves authenticated React-admin lists with filters and safe runner fields", async () => {
+    const runner = await registerRunner("alice");
+    await db
+      .update(runners)
+      .set({
+        quotaRemainingToday: 500,
+        lastSeenAt: new Date("2026-02-02T10:00:00Z"),
+      })
+      .where(eq(runners.id, runner.runnerId));
+    await seedRepo({
+      id: "repo-low",
+      githubUrl: "https://github.com/acme/legacy",
+      owner: "acme",
+      name: "legacy",
+      stars: 10,
+      eligible: false,
+    });
+    await seedRepo({
+      id: "repo-1",
+      githubUrl: "https://github.com/acme/project",
+      owner: "acme",
+      name: "project",
+      stars: 100,
+      eligible: true,
+    });
+    await seedIssue({ id: "issue-1", githubId: 42, title: "Fix admin data" });
+    await db.insert(contributions).values({
+      id: "contribution-1",
+      issueId: "issue-1",
+      runnerId: runner.runnerId,
+      prUrl: "https://github.com/acme/project/pull/1",
+      status: "SUCCESS",
+      tokensUsed: 250,
+    });
+
+    await request(app.getHttpServer()).get("/admin/session").expect(401);
+
+    const sessionResponse = await request(app.getHttpServer())
+      .get("/admin/session")
+      .set("X-Admin-Token", adminToken)
+      .set("Origin", "http://localhost:5173")
+      .expect("access-control-allow-origin", "http://localhost:5173")
+      .expect(200);
+    expect(sessionResponse.body).toEqual({ authenticated: true });
+
+    const repositoriesResponse = await request(app.getHttpServer())
+      .get("/admin/repositories")
+      .set("X-Admin-Token", adminToken)
+      .query({
+        sort: JSON.stringify(["stars", "DESC"]),
+        range: JSON.stringify([0, 0]),
+        filter: JSON.stringify({ q: "acme" }),
+      })
+      .expect(200);
+    expect(repositoriesResponse.body).toMatchObject({
+      total: 2,
+      data: [{ id: "repo-1", name: "project", stars: 100 }],
+    });
+
+    const issuesResponse = await request(app.getHttpServer())
+      .get("/admin/issues")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ status: "PENDING", q: "admin" }) })
+      .expect(200);
+    expect(issuesResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: "issue-1", githubUrl: expect.any(String) }],
+    });
+
+    const runnersResponse = await request(app.getHttpServer())
+      .get("/admin/runners")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ active: true }) })
+      .expect(200);
+    expect(runnersResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: runner.runnerId, contributorName: "alice" }],
+    });
+    expect(runnersResponse.body.data[0]).not.toHaveProperty("token");
+    expect(runnersResponse.body.data[0]).not.toHaveProperty("preferences");
+
+    const contributionsResponse = await request(app.getHttpServer())
+      .get("/admin/contributions")
+      .set("X-Admin-Token", adminToken)
+      .query({ filter: JSON.stringify({ status: "SUCCESS" }) })
+      .expect(200);
+    expect(contributionsResponse.body).toMatchObject({
+      total: 1,
+      data: [{ id: "contribution-1", tokensUsed: 250 }],
+    });
   });
 
   it("registers a runner through the HTTP API and persists only trimmed public input", async () => {

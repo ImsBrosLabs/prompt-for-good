@@ -16,6 +16,10 @@ x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
   - hub_node_modules:/workspace/node_modules
 
+x-admin-volumes: &admin-volumes
+  - ./pfg-hub-admin:/workspace
+  - admin_node_modules:/workspace/node_modules
+
 x-agent-environment: &agent-environment
   PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
   PFG_TOKEN: ${PFG_TOKEN:-test-token}
@@ -76,6 +80,22 @@ services:
     ports:
       - "${PFG_HUB_PORT:-8080}:8080"
     volumes: *hub-volumes
+
+  admin:
+    build:
+      context: ./pfg-hub-admin
+      dockerfile: Dockerfile.dev
+    depends_on:
+      hub:
+        condition: service_started
+    env_file: *hub-env-file
+    environment:
+      VITE_PFG_HUB_API_URL: ${VITE_PFG_HUB_API_URL:-/api}
+      PFG_HUB_PROXY_TARGET: ${PFG_HUB_PROXY_TARGET:-}
+      PFG_HUB_PROXY_HOST: hub
+    ports:
+      - "${PFG_HUB_ADMIN_PORT:-5173}:5173"
+    volumes: *admin-volumes
 
   hub-test:
     build:
@@ -164,6 +184,7 @@ services:
 volumes:
   postgres_data:
   hub_node_modules:
+  admin_node_modules:
   agent_venv:
   agent_uv_cache:
   pfg_work:

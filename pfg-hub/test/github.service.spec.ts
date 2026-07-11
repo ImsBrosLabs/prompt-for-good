@@ -4,6 +4,7 @@ import { AppConfig } from "../src/config";
 import { GitHubService } from "../src/github/github.service";
 
 const baseConfig: AppConfig = {
+  corsOrigins: ["http://localhost:5173"],
   port: 8080,
   httpsEnabled: false,
   httpsCertPath: "./certs/hub.pfg.local.pem",

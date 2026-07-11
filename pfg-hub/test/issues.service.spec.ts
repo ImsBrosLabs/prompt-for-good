@@ -23,6 +23,7 @@ const runner: Runner = {
 };
 
 const config: AppConfig = {
+  corsOrigins: ["http://localhost:5173"],
   port: 8080,
   httpsEnabled: false,
   httpsCertPath: "./certs/hub.pfg.local.pem",

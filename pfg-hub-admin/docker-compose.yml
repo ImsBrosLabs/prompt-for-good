@@ -1,0 +1,20 @@
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - path: ../.env
+        required: false
+      - path: ./.env
+        required: false
+    environment:
+      PFG_HUB_PROXY_HOST: host.docker.internal
+    ports:
+      - "${PFG_HUB_ADMIN_PORT:-5173}:5173"
+    volumes:
+      - .:/workspace
+      - admin_node_modules:/workspace/node_modules
+
+volumes:
+  admin_node_modules:
