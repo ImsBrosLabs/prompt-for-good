@@ -421,10 +421,8 @@ Agent/runner variables:
 
 ## Roadmap
 
-- Expand GitHub repository eligibility beyond stars.
-- Strengthen issue scoring and solvability checks.
 - Finish the autonomous agent pipeline from patch generation to PR creation.
-- Add runner preferences and preference-aware dispatch.
+- Extend runner preference coverage where contributors need finer control.
 - Add production-grade auth, token rotation, observability, and deployment.
 - Build a public dashboard for repositories, issues, runners, and contributions.
 

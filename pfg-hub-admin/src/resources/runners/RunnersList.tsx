@@ -25,6 +25,7 @@ const runnerFilters = [
 export function RunnersList() {
   return (
     <List
+      title="Runners"
       filters={runnerFilters}
       perPage={25}
       sort={{ field: "lastSeenAt", order: "DESC" }}

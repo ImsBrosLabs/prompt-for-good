@@ -85,4 +85,103 @@ describe("ScoringService", () => {
       service.matchRunnerPreferences(candidate, { maxEstimatedMinutes: 20 }),
     ).toBeNull();
   });
+
+  it("calibrates representative repository scoring scenarios", () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    expect(
+      service.assessRepo(
+        {
+          stars: 120,
+          ciDetected: true,
+          testsDetected: true,
+          lastPushedAt: new Date("2025-12-01T00:00:00Z"),
+        },
+        now,
+      ),
+    ).toMatchObject({
+      score: 90,
+      eligible: true,
+      diagnostic: {
+        signals: expect.arrayContaining([
+          expect.objectContaining({ name: "ciDetected", points: 25 }),
+          expect.objectContaining({ name: "testsDetected", points: 25 }),
+          expect.objectContaining({ name: "recentActivity", points: 20 }),
+        ]),
+      },
+    });
+
+    expect(
+      service.assessRepo(
+        {
+          stars: 2000,
+          ciDetected: true,
+          testsDetected: false,
+          lastPushedAt: new Date("2025-12-01T00:00:00Z"),
+        },
+        now,
+      ),
+    ).toMatchObject({
+      score: 75,
+      eligible: false,
+    });
+  });
+
+  it("calibrates representative solvability scenarios", () => {
+    const actionable = service.assessIssue({
+      title: "Fix date parsing error",
+      labels: "bug,pfg-eligible",
+      body: [
+        "Expected parsing to keep the timezone, actual output drops it.",
+        "Steps to reproduce are listed below with a failing test.",
+        "Acceptance criteria:",
+        "- [ ] preserves timezone",
+        "```ts\nexpect(parseDate(input)).toEqual(expected)\n```",
+      ].join("\n"),
+    });
+    const vague = service.assessIssue({
+      title: "Something broken",
+      labels: "",
+      body: "Something is broken.",
+    });
+    const broad = service.assessIssue({
+      title: "Refactor the complete architecture",
+      labels: "help wanted",
+      body: "Expected a migration plan. Actual system has legacy architecture. ".repeat(
+        120,
+      ),
+    });
+
+    expect(actionable).toMatchObject({
+      score: 90,
+      difficulty: "medium",
+      diagnostic: {
+        signals: expect.arrayContaining([
+          expect.objectContaining({ name: "reproductionSteps", points: 15 }),
+          expect.objectContaining({ name: "acceptanceCriteria", points: 10 }),
+          expect.objectContaining({
+            name: "testableExpectedBehavior",
+            points: 5,
+          }),
+        ]),
+      },
+    });
+    expect(vague).toMatchObject({
+      score: 0,
+      diagnostic: {
+        signals: expect.arrayContaining([
+          expect.objectContaining({ name: "ambiguousScope", points: -20 }),
+        ]),
+      },
+    });
+    expect(broad).toMatchObject({
+      difficulty: "hard",
+      estimatedMinutes: 300,
+      diagnostic: {
+        signals: expect.arrayContaining([
+          expect.objectContaining({ name: "tooBroadScope", points: -15 }),
+        ]),
+      },
+    });
+  });
 });

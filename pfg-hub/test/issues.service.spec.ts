@@ -31,6 +31,7 @@ const issue: Issue = {
   githubUrl: "https://github.com/owner/repo/issues/42",
   labels: "bug,good first issue",
   score: 85,
+  scoreDiagnostic: { score: 85, signals: [] },
   difficulty: "medium",
   estimatedMinutes: 90,
   status: "PENDING",
@@ -98,11 +99,19 @@ function createIssuesService(options: {
     validateToken: vi.fn(async (_token: string) => options.runner ?? runner),
   } as unknown as RunnersService;
   const scoringService = {
+    assessRunnerPreferences: vi.fn(() => ({
+      compatible: true,
+      affinity: 0,
+      diagnostic: { score: 0, signals: [] },
+    })),
     matchRunnerPreferences: vi.fn(() => 0),
   } as unknown as ScoringService;
   const runtimeConfigService = {
     get: vi.fn(async () => options.issueMaxRetries ?? 3),
   } as unknown as RuntimeConfigService;
+  const dispatchMetricsService = {
+    recordMatchingLatency: vi.fn(),
+  };
 
   return {
     service: new IssuesService(
@@ -110,6 +119,7 @@ function createIssuesService(options: {
       runnersService,
       scoringService,
       runtimeConfigService,
+      dispatchMetricsService,
     ),
     select,
     update,
@@ -119,11 +129,20 @@ function createIssuesService(options: {
     runnersService,
     scoringService,
     runtimeConfigService,
+    dispatchMetricsService,
   };
 }
 
 function withRepo(rowIssue: Issue) {
-  return { issue: rowIssue, repoUrl: "https://github.com/owner/repo" };
+  return {
+    issue: rowIssue,
+    repoUrl: "https://github.com/owner/repo",
+    owner: "owner",
+    name: "repo",
+    language: "TypeScript",
+    ecosystems: ["npm"],
+    license: "MIT",
+  };
 }
 
 describe("IssuesService", () => {
@@ -180,8 +199,15 @@ describe("IssuesService", () => {
         ],
       ],
     });
-    vi.mocked(scoringService.matchRunnerPreferences).mockImplementation(
-      (candidate) => (candidate.name === "preferred-project" ? 4 : 0),
+    vi.mocked(scoringService.assessRunnerPreferences).mockImplementation(
+      (candidate) => ({
+        compatible: true,
+        affinity: candidate.name === "preferred-project" ? 4 : 0,
+        diagnostic: {
+          score: candidate.name === "preferred-project" ? 4 : 0,
+          signals: [],
+        },
+      }),
     );
 
     await expect(service.getNextIssue("token-1")).resolves.toMatchObject({

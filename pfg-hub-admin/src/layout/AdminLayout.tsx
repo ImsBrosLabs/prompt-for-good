@@ -1,12 +1,17 @@
+import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
+import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import { Box, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
   AppBar,
   Layout,
+  Menu,
   TitlePortal,
   type AppBarProps,
   type LayoutProps,
+  type MenuProps,
 } from "react-admin";
+import { useDocumentTitle } from "../pageTitles";
 
 function AdminAppBar(props: AppBarProps) {
   return (
@@ -79,10 +84,13 @@ function AdminAppBar(props: AppBarProps) {
 }
 
 export function AdminLayout(props: LayoutProps) {
+  useDocumentTitle();
+
   return (
     <Layout
       {...props}
       appBar={AdminAppBar}
+      menu={AdminMenu}
       sx={{
         "& .RaLayout-content": {
           minWidth: 0,
@@ -116,5 +124,24 @@ export function AdminLayout(props: LayoutProps) {
         },
       }}
     />
+  );
+}
+
+/** Adds the operations route before the generated resource navigation. */
+function AdminMenu(props: MenuProps) {
+  return (
+    <Menu {...props}>
+      <Menu.Item
+        to="/operations"
+        primaryText="Operations"
+        leftIcon={<MonitorHeartOutlinedIcon />}
+      />
+      <Menu.Item
+        to="/scoring"
+        primaryText="Scoring"
+        leftIcon={<QueryStatsOutlinedIcon />}
+      />
+      <Menu.ResourceItems />
+    </Menu>
   );
 }

@@ -28,13 +28,14 @@ POST /seed/repo                → admin seeds a single GitHub repository
 POST /seed/default             → admin seeds the default demo repository
 POST /seed/discover            → admin starts GitHub repository discovery
 GET  /seed/ingestion-runs      → admin reads recent ingestion diagnostics
+GET  /admin/scoring            → admin reads scoring diagnostics and queue health
 GET  /stats                    → contribution dashboard data
 ```
 
 **Database schema (simplified):**
 ```sql
-repos         (id, github_url, owner, name, language, stars, eligible, last_crawled_at)
-issues        (id, repo_id, github_id, title, score, status, claimed_by, claimed_at)
+repos         (id, github_url, owner, name, language, stars, score, score_diagnostic, eligible, last_crawled_at)
+issues        (id, repo_id, github_id, title, score, score_diagnostic, status, claimed_by, claimed_at)
 runners       (id, token, contributor_name, quota_remaining_today, last_seen_at, active)
 contributions  (id, issue_id, runner_id, pr_url, status, created_at)
 ingestion_runs (id, status, discovered_repos, seeded_repos, recrawled_repos, created_issues, failed_repositories, details)
@@ -191,21 +192,20 @@ retries, contribution logging, stats, manual GitHub seeding, OpenAPI docs and
 unit/service tests. The remaining work is mainly about turning that backend MVP
 into a production/public hub.
 
-1. **Stronger scoring**
-   - Expand repository scoring beyond stars to include CI, tests and recent
-     activity.
-   - Expand issue scoring with scope estimation, difficulty tiers and stronger
-     solvability signals.
-   - Evolve the current `score desc, created_at asc` dispatch order into
-     preference-aware matching.
+Scoring hardening is now part of the backend and admin MVP: repository and
+issue scoring produce persisted JSON diagnostics, rejected issue samples are
+kept in ingestion run details, dispatch affinity is logged with matching
+latency, and the admin scoring screen exposes queue health. Keep in-memory
+preference-aware dispatch until pending issues exceed 1000 or recent p95
+matching latency reaches 100 ms durably; then move ranking into the database.
 
-2. **Queue robustness**
+1. **Queue robustness**
    - Reclaim or fail stale `CLAIMED` issues after a timeout.
    - Account for runner quota when dispatching work.
    - Mark runners inactive when heartbeat freshness expires.
    - Prevent duplicate GitHub issues across recrawls and repository records.
 
-3. **Runner project preferences**
+2. **Runner project preferences**
    - Let runners declare project selection criteria instead of receiving any
      globally eligible issue.
    - Support preferences such as allowed/blocked repositories, languages,
@@ -216,22 +216,22 @@ into a production/public hub.
    - Expose the same preferences in the runner configuration file so
      contributors can control which projects their local quota may work on.
 
-4. **Runtime API validation**
+3. **Runtime API validation**
    - Add structured request validation for DTOs.
    - Validate PR URLs, non-negative token counts, non-negative quota values and
      required completion fields.
 
-5. **Production security**
+4. **Production security**
    - Replace static admin-token authentication with scoped bearer auth such as
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-6. **Dashboard and missing API surface**
+5. **Dashboard and missing API surface**
    - Build the public hub dashboard for repositories, issues, pull requests,
      contributors, runners and token usage.
    - Add the documented `GET /repos` endpoint.
 
-7. **Operations and deployment**
+6. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.
@@ -243,7 +243,6 @@ into a production/public hub.
 
 - **Embeddings-based context:** Use vector search over the codebase instead of grep for M2+
 - **Language-specific build runners:** Detect language (Maven, Gradle, npm, pip, cargo) and adapt build commands
-- **Issue difficulty tiers:** Easy / Medium / Hard scoring for better runner-issue matching
 - **Multi-LLM support:** Plugin architecture to support OpenAI GPT-4o, Google Gemini
 - **Secure authentication:** Replace the static admin token with standard `Authorization: Bearer` auth, ideally backed by JWT/OIDC with scoped admin permissions
 - **pfg-hub dashboard:** Web UI for stats (repos, PRs, contributors, token usage)

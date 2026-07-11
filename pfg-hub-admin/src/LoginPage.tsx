@@ -13,9 +13,12 @@ import {
 } from "@mui/material";
 import { type FormEvent, useState } from "react";
 import { useLogin } from "react-admin";
+import { useDocumentTitle } from "./pageTitles";
 
 /** Renders the responsive branded login and delegates authentication to React-admin. */
 export function LoginPage() {
+  useDocumentTitle();
+
   const login = useLogin();
   const [adminKey, setAdminKey] = useState("");
   const [showAdminKey, setShowAdminKey] = useState(false);

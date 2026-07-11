@@ -20,7 +20,11 @@ import {
 } from "../openapi/dtos";
 import { RuntimeConfigKey } from "../runtime-config/runtime-config.catalog";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
-import { AdminListResponse, AdminService } from "./admin.service";
+import {
+  AdminListResponse,
+  AdminScoringOverview,
+  AdminService,
+} from "./admin.service";
 
 type ListQuery = {
   sort?: string;
@@ -71,6 +75,14 @@ export class AdminController {
     @Query() query: ListQuery,
   ): Promise<AdminListResponse<unknown>> {
     return this.adminService.listContributions(query);
+  }
+
+  @Get("scoring")
+  @ApiOkResponse({
+    description: "Scoring diagnostics, queue health and recent scored work",
+  })
+  getScoringOverview(): Promise<AdminScoringOverview> {
+    return this.adminService.getScoringOverview();
   }
 
   @Get("configuration")

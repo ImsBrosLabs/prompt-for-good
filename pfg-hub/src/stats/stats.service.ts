@@ -2,11 +2,16 @@ import { Inject, Injectable } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, issues, repos, runners } from "../db/schema";
+import { DispatchMetricsService } from "../dispatch-metrics/dispatch-metrics.service";
 import { StatsResponseDto } from "../openapi/dtos";
 
 @Injectable()
 export class StatsService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(DispatchMetricsService)
+    private readonly dispatchMetricsService: DispatchMetricsService,
+  ) {}
 
   /** Aggregates the counters displayed by the public stats endpoint. */
   async getStats(): Promise<StatsResponseDto> {
@@ -32,16 +37,23 @@ export class StatsService {
       this.count(runners, eq(runners.active, true)),
     ]);
 
+    const matchingLatency = this.dispatchMetricsService.snapshot();
+
     return {
       totalRepos,
       eligibleRepos,
       totalIssues,
       pendingIssues,
+      queueSize: pendingIssues,
       claimedIssues,
       doneIssues,
       failedIssues,
       totalPrsOpened,
       activeRunners,
+      dispatchMatchingLatencySampleCount: matchingLatency.sampleCount,
+      dispatchMatchingLatencyMs: matchingLatency.lastMatchingLatencyMs,
+      averageDispatchMatchingLatencyMs: matchingLatency.averageMatchingLatencyMs,
+      p95DispatchMatchingLatencyMs: matchingLatency.p95MatchingLatencyMs,
     };
   }
 

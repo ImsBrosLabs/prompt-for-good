@@ -37,6 +37,17 @@ export type RunnerPreferences = {
   maxEstimatedMinutes?: number;
 };
 
+export type ScoreDiagnosticSignal = {
+  name: string;
+  points: number;
+  evidence: string;
+};
+
+export type ScoreDiagnostic = {
+  score: number;
+  signals: ScoreDiagnosticSignal[];
+};
+
 export const repos = pgTable("repos", {
   id: varchar("id", { length: 36 }).primaryKey(),
   githubUrl: varchar("github_url", { length: 255 }).notNull().unique(),
@@ -49,6 +60,10 @@ export const repos = pgTable("repos", {
   testsDetected: boolean("tests_detected").notNull().default(false),
   lastPushedAt: timestamp("last_pushed_at", { mode: "date" }),
   score: integer("score").notNull().default(0),
+  scoreDiagnostic: jsonb("score_diagnostic")
+    .$type<ScoreDiagnostic>()
+    .notNull()
+    .default({ score: 0, signals: [] }),
   stars: integer("stars").notNull().default(0),
   eligible: boolean("eligible").notNull().default(false),
   lastCrawledAt: timestamp("last_crawled_at", { mode: "date" }),
@@ -68,6 +83,10 @@ export const issues = pgTable(
     githubUrl: varchar("github_url", { length: 255 }).notNull(),
     labels: varchar("labels", { length: 255 }).default(""),
     score: integer("score").notNull().default(0),
+    scoreDiagnostic: jsonb("score_diagnostic")
+      .$type<ScoreDiagnostic>()
+      .notNull()
+      .default({ score: 0, signals: [] }),
     difficulty: varchar("difficulty", { length: 20 })
       .$type<IssueDifficulty>()
       .notNull()

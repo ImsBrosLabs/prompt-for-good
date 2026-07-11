@@ -19,7 +19,11 @@ import {
   repos,
 } from "../db/schema";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
-import { ScoringService } from "../scoring/scoring.service";
+import {
+  IssueAssessment,
+  ScoringDiagnostic,
+  ScoringService,
+} from "../scoring/scoring.service";
 
 type GitHubRepoResponse = {
   stargazers_count: number;
@@ -107,8 +111,19 @@ type GitHubIngestionRepositoryDetail = {
   eligible?: boolean;
   createdIssues?: number;
   skippedPullRequests?: number;
+  skippedLowScoreIssues?: number;
+  rejectedIssueDiagnostics?: GitHubRejectedIssueDiagnostic[];
   error?: string;
   statusCode?: number;
+};
+
+type GitHubRejectedIssueDiagnostic = {
+  githubId: number;
+  title: string;
+  score: number;
+  difficulty: Issue["difficulty"];
+  estimatedMinutes: number;
+  diagnostic: ScoringDiagnostic;
 };
 
 type GitHubRateLimitSnapshot = {
@@ -300,7 +315,7 @@ export class GitHubService
       repoData.default_branch ?? "HEAD",
     );
     const lastPushedAt = this.parseGitHubDate(repoData.pushed_at);
-    const repoScore = this.scoringService.scoreRepo({
+    const repoAssessment = this.scoringService.assessRepo({
       stars,
       ciDetected: repositorySignals.ciDetected,
       testsDetected: repositorySignals.testsDetected,
@@ -309,16 +324,9 @@ export class GitHubService
     const hasIssues = repoData.has_issues ?? true;
     const repositoryActive =
       !repoData.archived && !repoData.disabled && hasIssues;
-    const eligible =
-      repositoryActive &&
-      this.scoringService.isRepoEligible({
-        stars,
-        ciDetected: repositorySignals.ciDetected,
-        testsDetected: repositorySignals.testsDetected,
-        lastPushedAt,
-      });
+    const eligible = repositoryActive && repoAssessment.eligible;
     this.logger.log(
-      `Fetched GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} stars=${stars} score=${repoScore} ci=${repositorySignals.ciDetected} tests=${repositorySignals.testsDetected} pushedAt=${lastPushedAt?.toISOString() ?? "unknown"} language=${repoData.language ?? "unknown"} archived=${repoData.archived ?? false} disabled=${repoData.disabled ?? false} hasIssues=${hasIssues} eligible=${eligible}`,
+      `Fetched GitHub repository ${canonicalRepo.owner}/${canonicalRepo.name} requestedAs=${owner}/${name} stars=${stars} score=${repoAssessment.score} ci=${repositorySignals.ciDetected} tests=${repositorySignals.testsDetected} pushedAt=${lastPushedAt?.toISOString() ?? "unknown"} language=${repoData.language ?? "unknown"} archived=${repoData.archived ?? false} disabled=${repoData.disabled ?? false} hasIssues=${hasIssues} eligible=${eligible}`,
     );
 
     const [repo] = await this.db
@@ -334,7 +342,8 @@ export class GitHubService
         ciDetected: repositorySignals.ciDetected,
         testsDetected: repositorySignals.testsDetected,
         lastPushedAt,
-        score: repoScore,
+        score: repoAssessment.score,
+        scoreDiagnostic: repoAssessment.diagnostic,
         stars,
         eligible,
       })
@@ -575,6 +584,9 @@ export class GitHubService
           eligible: result.repoEligible,
           createdIssues: result.crawl?.createdIssues ?? 0,
           skippedPullRequests: result.crawl?.skippedPullRequests ?? 0,
+          skippedLowScoreIssues: result.crawl?.skippedLowScoreIssues ?? 0,
+          rejectedIssueDiagnostics:
+            result.crawl?.rejectedIssueDiagnostics ?? [],
         });
       } catch (error) {
         if (error instanceof GitHubRateLimitError) throw error;
@@ -633,6 +645,7 @@ export class GitHubService
       skippedPullRequests: 0,
       skippedExistingIssues: 0,
       skippedLowScoreIssues: 0,
+      rejectedIssueDiagnostics: [],
     };
 
     for (const item of issuePages.flat()) {
@@ -674,6 +687,7 @@ export class GitHubService
           githubUrl: item.html_url,
           labels,
           score: assessment.score,
+          scoreDiagnostic: assessment.diagnostic,
           difficulty: assessment.difficulty,
           estimatedMinutes: assessment.estimatedMinutes,
           status: "PENDING",
@@ -683,6 +697,7 @@ export class GitHubService
         result.createdIssues += 1;
       } else {
         result.skippedLowScoreIssues += 1;
+        this.recordRejectedIssueDiagnostic(result, item, assessment);
       }
     }
 
@@ -695,6 +710,24 @@ export class GitHubService
       `Crawled GitHub issues for ${repo.owner}/${repo.name} fetchedIssues=${result.fetchedIssues} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests} skippedExistingIssues=${result.skippedExistingIssues} skippedLowScoreIssues=${result.skippedLowScoreIssues}`,
     );
     return result;
+  }
+
+  /** Keeps a small rejected-issue sample for calibration without storing full issue bodies. */
+  private recordRejectedIssueDiagnostic(
+    result: GitHubCrawlResult,
+    item: GitHubIssueResponse,
+    assessment: IssueAssessment,
+  ): void {
+    if (result.rejectedIssueDiagnostics.length >= 10) return;
+
+    result.rejectedIssueDiagnostics.push({
+      githubId: item.id,
+      title: item.title,
+      score: assessment.score,
+      difficulty: assessment.difficulty,
+      estimatedMinutes: assessment.estimatedMinutes,
+      diagnostic: assessment.diagnostic,
+    });
   }
 
   /** Inspects a repository tree once to identify CI, test and ecosystem signals. */
@@ -827,6 +860,8 @@ export class GitHubService
           eligible: repo.eligible,
           createdIssues: result.createdIssues,
           skippedPullRequests: result.skippedPullRequests,
+          skippedLowScoreIssues: result.skippedLowScoreIssues,
+          rejectedIssueDiagnostics: result.rejectedIssueDiagnostics,
         });
       } catch (error) {
         if (error instanceof GitHubRateLimitError) throw error;
@@ -1218,6 +1253,7 @@ type GitHubCrawlResult = {
   skippedPullRequests: number;
   skippedExistingIssues: number;
   skippedLowScoreIssues: number;
+  rejectedIssueDiagnostics: GitHubRejectedIssueDiagnostic[];
 };
 
 class GitHubRateLimitError extends Error {}

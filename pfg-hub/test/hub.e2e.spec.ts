@@ -857,11 +857,69 @@ describeDb("hub e2e", () => {
       eligibleRepos: 1,
       totalIssues: 4,
       pendingIssues: 1,
+      queueSize: 1,
       claimedIssues: 1,
       doneIssues: 1,
       failedIssues: 1,
       totalPrsOpened: 2,
       activeRunners: 1,
+      dispatchMatchingLatencySampleCount: 0,
+      dispatchMatchingLatencyMs: null,
+      averageDispatchMatchingLatencyMs: null,
+      p95DispatchMatchingLatencyMs: null,
+    });
+  });
+
+  it("serves the admin scoring overview with queue health and diagnostics", async () => {
+    await seedRepo({
+      id: "repo-1",
+      githubUrl: "https://github.com/owner/repo",
+      owner: "owner",
+      name: "repo",
+      eligible: true,
+    });
+    await seedIssue({
+      id: "diagnosed-issue",
+      githubId: 99,
+      status: "PENDING",
+      score: 70,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/admin/scoring")
+      .set("X-Admin-Token", adminToken)
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      queueHealth: {
+        queueSize: 1,
+        databaseRankingRecommended: false,
+        databaseRankingThresholds: {
+          queueSize: 1000,
+          p95MatchingLatencyMs: 100,
+        },
+      },
+      recentRepositories: [
+        expect.objectContaining({
+          owner: "owner",
+          name: "repo",
+          scoreDiagnostic: expect.objectContaining({
+            score: expect.any(Number),
+            signals: expect.any(Array),
+          }),
+        }),
+      ],
+      recentIssues: [
+        expect.objectContaining({
+          id: "diagnosed-issue",
+          repoOwner: "owner",
+          repoName: "repo",
+          scoreDiagnostic: expect.objectContaining({
+            score: expect.any(Number),
+            signals: expect.any(Array),
+          }),
+        }),
+      ],
     });
   });
 
@@ -1072,6 +1130,13 @@ describeDb("hub e2e", () => {
                 { name: "help wanted" },
               ],
             },
+            {
+              id: 2002,
+              title: "Something broken",
+              body: "",
+              html_url: "https://github.com/acme/project/issues/11",
+              labels: [],
+            },
           ]);
         }
 
@@ -1134,6 +1199,22 @@ describeDb("hub e2e", () => {
             owner: "acme",
             name: "project",
             action: "seeded",
+            skippedLowScoreIssues: 1,
+            rejectedIssueDiagnostics: expect.arrayContaining([
+              expect.objectContaining({
+                githubId: 2002,
+                title: "Something broken",
+                score: 0,
+                diagnostic: expect.objectContaining({
+                  signals: expect.arrayContaining([
+                    expect.objectContaining({
+                      name: "missingBody",
+                      points: -30,
+                    }),
+                  ]),
+                }),
+              }),
+            ]),
           }),
         ]),
       }),

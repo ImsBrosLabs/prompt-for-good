@@ -2,6 +2,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
@@ -9,10 +10,11 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, Issue, issues, repos } from "../db/schema";
+import { DispatchMetricsService } from "../dispatch-metrics/dispatch-metrics.service";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
 import { RunnersService } from "../runners/runners.service";
-import { ScoringService } from "../scoring/scoring.service";
+import { ScoringDiagnostic, ScoringService } from "../scoring/scoring.service";
 
 type IssueWithRepo = Issue & { repoUrl: string };
 type DispatchIssue = IssueWithRepo & {
@@ -25,6 +27,8 @@ type DispatchIssue = IssueWithRepo & {
 
 @Injectable()
 export class IssuesService {
+  private readonly logger = new Logger(IssuesService.name);
+
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(RunnersService)
@@ -33,10 +37,13 @@ export class IssuesService {
     private readonly scoringService: ScoringService,
     @Inject(RuntimeConfigService)
     private readonly runtimeConfigService: RuntimeConfigService,
+    @Inject(DispatchMetricsService)
+    private readonly dispatchMetricsService: DispatchMetricsService,
   ) {}
 
   /** Returns the highest-affinity pending issue available to a valid runner. */
   async getNextIssue(runnerToken: string): Promise<IssueDto | null> {
+    const startedAt = Date.now();
     const runner = await this.runnersService.validateToken(runnerToken);
 
     const rows = await this.db
@@ -54,17 +61,36 @@ export class IssuesService {
       .where(eq(issues.status, "PENDING"))
       .orderBy(desc(issues.score), asc(issues.createdAt));
 
-    const matching = rows
-      .map((row) => {
-        const issue = { ...row.issue, ...row } as DispatchIssue;
-        const affinity = this.scoringService.matchRunnerPreferences(
-          issue,
-          runner.preferences,
-        );
-        return affinity === null ? null : { issue, affinity };
-      })
+    const assessed = rows.map((row) => {
+      const issue = { ...row.issue, ...row } as DispatchIssue;
+      const match = this.scoringService.assessRunnerPreferences(
+        issue,
+        runner.preferences,
+      );
+      return { issue, match };
+    });
+    const rejectedSignals = assessed
+      .filter((candidate) => !candidate.match.compatible)
+      .map((candidate) => candidate.match.diagnostic.signals[0]?.name)
+      .filter(Boolean);
+    const matching = assessed
+      .map((candidate) =>
+        candidate.match.compatible
+          ? {
+              issue: candidate.issue,
+              affinity: candidate.match.affinity,
+              diagnostic: candidate.match.diagnostic,
+            }
+          : null,
+      )
       .filter(
-        (candidate): candidate is { issue: DispatchIssue; affinity: number } =>
+        (
+          candidate,
+        ): candidate is {
+          issue: DispatchIssue;
+          affinity: number;
+          diagnostic: ScoringDiagnostic;
+        } =>
           candidate !== null,
       )
       .sort(
@@ -74,7 +100,24 @@ export class IssuesService {
           left.issue.createdAt.getTime() - right.issue.createdAt.getTime(),
       );
 
+    const latencyMs = Date.now() - startedAt;
+    this.dispatchMetricsService.recordMatchingLatency(latencyMs);
+    this.logger.log(
+      `Dispatch matching runnerId=${runner.id} pendingCandidates=${rows.length} compatibleCandidates=${matching.length} rejectedSignals=${this.summarizeSignals(rejectedSignals)} latencyMs=${latencyMs} selectedIssueId=${matching[0]?.issue.id ?? "none"} selectedAffinity=${matching[0]?.affinity ?? "none"} selectedAffinitySignals=${matching[0]?.diagnostic.signals.map((signal) => `${signal.name}:${signal.points}`).join(",") ?? ""}`,
+    );
+
     return matching[0] ? this.toDto(matching[0].issue) : null;
+  }
+
+  /** Compacts repeated rejection reasons so dispatch logs stay bounded. */
+  private summarizeSignals(signals: string[]): string {
+    const counts = new Map<string, number>();
+    for (const signal of signals) {
+      counts.set(signal, (counts.get(signal) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([signal, count]) => `${signal}:${count}`)
+      .join(",");
   }
 
   /** Atomically assigns a pending issue to the authenticated runner. */

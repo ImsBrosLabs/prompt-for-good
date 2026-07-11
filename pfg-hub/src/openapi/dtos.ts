@@ -263,6 +263,14 @@ export class StatsResponseDto {
   @ApiPropertyOptional({ example: 200, format: "int64", type: Number })
   pendingIssues?: number;
 
+  @ApiPropertyOptional({
+    description: "Current dispatch queue size, equal to pending issues",
+    example: 200,
+    format: "int64",
+    type: Number,
+  })
+  queueSize?: number;
+
   @ApiPropertyOptional({ example: 10, format: "int64", type: Number })
   claimedIssues?: number;
 
@@ -277,6 +285,33 @@ export class StatsResponseDto {
 
   @ApiPropertyOptional({ example: 5, format: "int64", type: Number })
   activeRunners?: number;
+
+  @ApiPropertyOptional({ example: 12, format: "int32", type: Number })
+  dispatchMatchingLatencySampleCount?: number;
+
+  @ApiPropertyOptional({
+    description: "Most recent in-memory dispatch matching latency in ms",
+    example: 24,
+    nullable: true,
+    type: Number,
+  })
+  dispatchMatchingLatencyMs?: number | null;
+
+  @ApiPropertyOptional({
+    description: "Average recent in-memory dispatch matching latency in ms",
+    example: 18,
+    nullable: true,
+    type: Number,
+  })
+  averageDispatchMatchingLatencyMs?: number | null;
+
+  @ApiPropertyOptional({
+    description: "P95 recent in-memory dispatch matching latency in ms",
+    example: 42,
+    nullable: true,
+    type: Number,
+  })
+  p95DispatchMatchingLatencyMs?: number | null;
 }
 
 export class IngestionRunDto {

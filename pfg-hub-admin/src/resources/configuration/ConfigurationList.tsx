@@ -19,6 +19,7 @@ import {
   useGetList,
   useNotify,
   useRefresh,
+  Title,
   useUpdate,
 } from "react-admin";
 
@@ -87,6 +88,7 @@ export function ConfigurationList() {
 
   return (
     <Box sx={{ maxWidth: 1120 }}>
+      <Title title="Configuration" />
       <Typography variant="h6" sx={{ mb: 2 }}>
         Configuration
       </Typography>

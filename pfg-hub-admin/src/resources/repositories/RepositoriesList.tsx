@@ -26,6 +26,7 @@ const repositoryFilters = [
 export function RepositoriesList() {
   return (
     <List
+      title="Repositories"
       filters={repositoryFilters}
       perPage={25}
       sort={{ field: "score", order: "DESC" }}

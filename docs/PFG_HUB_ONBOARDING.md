@@ -239,12 +239,13 @@ src/issues/issues.controller.ts
 src/issues/issues.service.ts
 ```
 
-`GET /issues/next` validates the runner token, then selects the best available
-issue:
+`GET /issues/next` validates the runner token, loads pending issues with
+repository context, filters out work that does not match the runner's
+preferences, then selects the highest-affinity compatible issue:
 
 ```text
 status = PENDING
-order by score desc, created_at asc
+rank by dispatch affinity desc, score desc, created_at asc
 limit 1
 ```
 
@@ -309,8 +310,12 @@ snapshots.
 Runs with isolated repository failures are recorded as `PARTIAL_SUCCESS`; hard
 GitHub quota exhaustion is recorded as `RATE_LIMITED`.
 
-The scoring rules live in `ScoringService`. They are intentionally simple and
-easy to change.
+The scoring rules live in `ScoringService`. They are deterministic, auditable
+and intentionally simple to change; ranking should not spend runner LLM quota.
+Repository and issue score snapshots are persisted as JSON diagnostics, and
+`/admin/scoring` exposes recent diagnostics plus queue size and matching
+latency so maintainers can decide when in-memory dispatch needs database-side
+ranking.
 
 ## Errors
 

@@ -32,6 +32,7 @@ const issueFilters = [
 export function IssuesList() {
   return (
     <List
+      title="Issues"
       filters={issueFilters}
       perPage={25}
       sort={{ field: "score", order: "DESC" }}

@@ -24,6 +24,7 @@ const contributionFilters = [
 export function ContributionsList() {
   return (
     <List
+      title="Contributions"
       filters={contributionFilters}
       perPage={25}
       sort={{ field: "createdAt", order: "DESC" }}

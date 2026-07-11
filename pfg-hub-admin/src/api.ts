@@ -4,7 +4,8 @@ const AUTH_STORAGE_KEY = "pfg-hub-admin.identity";
 const configuredApiUrl = import.meta.env.VITE_PFG_HUB_API_URL?.trim() || "/api";
 const apiUrl = configuredApiUrl.replace(/\/+$/, "");
 
-export const adminApiUrl = `${apiUrl}/admin`;
+export const hubApiUrl = apiUrl;
+export const adminApiUrl = `${hubApiUrl}/admin`;
 
 type StoredSession = {
   adminToken?: unknown;
@@ -26,7 +27,7 @@ export function getAdminToken(): string | null {
 }
 
 /** Executes an API request with JSON defaults and the persisted admin credential. */
-export function adminRequest(
+function authenticatedJsonRequest(
   url: string,
   options: fetchUtils.Options = {},
 ) {
@@ -43,6 +44,16 @@ export function adminRequest(
     credentials: "include",
     headers,
   });
+}
+
+export function adminRequest(url: string, options: fetchUtils.Options = {}) {
+  return authenticatedJsonRequest(url, options);
+}
+
+/** Calls a hub endpoint outside the /admin namespace with the admin credential. */
+export function hubRequest(path: string, options: fetchUtils.Options = {}) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return authenticatedJsonRequest(`${hubApiUrl}${normalizedPath}`, options);
 }
 
 export { AUTH_STORAGE_KEY };

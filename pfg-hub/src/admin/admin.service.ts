@@ -2,6 +2,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, or, SQL, sql } from "drizzle-orm";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, issues, repos, runners } from "../db/schema";
+import { DispatchMetricsService } from "../dispatch-metrics/dispatch-metrics.service";
+
+const DB_RANKING_QUEUE_SIZE_THRESHOLD = 1000;
+const DB_RANKING_P95_LATENCY_THRESHOLD_MS = 100;
 
 type ListQuery = {
   sort?: string;
@@ -22,9 +26,93 @@ export type AdminListResponse<RecordType> = {
   total: number;
 };
 
+export type AdminScoringOverview = {
+  queueHealth: {
+    queueSize: number;
+    dispatchMatchingLatencySampleCount: number;
+    dispatchMatchingLatencyMs: number | null;
+    averageDispatchMatchingLatencyMs: number | null;
+    p95DispatchMatchingLatencyMs: number | null;
+    databaseRankingRecommended: boolean;
+    databaseRankingThresholds: {
+      queueSize: number;
+      p95MatchingLatencyMs: number;
+    };
+  };
+  recentRepositories: unknown[];
+  recentIssues: unknown[];
+};
+
 @Injectable()
 export class AdminService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(
+    @Inject(DATABASE) private readonly db: Database,
+    @Inject(DispatchMetricsService)
+    private readonly dispatchMetricsService: DispatchMetricsService,
+  ) {}
+
+  /** Builds the scoring workbench payload without making the frontend compose resources. */
+  async getScoringOverview(): Promise<AdminScoringOverview> {
+    const matchingLatency = this.dispatchMetricsService.snapshot();
+    const [queueSize, recentRepositories, recentIssues] = await Promise.all([
+      this.count(issues, eq(issues.status, "PENDING")),
+      this.db
+        .select({
+          id: repos.id,
+          owner: repos.owner,
+          name: repos.name,
+          language: repos.language,
+          stars: repos.stars,
+          eligible: repos.eligible,
+          score: repos.score,
+          scoreDiagnostic: repos.scoreDiagnostic,
+          lastCrawledAt: repos.lastCrawledAt,
+          createdAt: repos.createdAt,
+        })
+        .from(repos)
+        .orderBy(desc(repos.createdAt))
+        .limit(12),
+      this.db
+        .select({
+          id: issues.id,
+          repoOwner: repos.owner,
+          repoName: repos.name,
+          title: issues.title,
+          status: issues.status,
+          difficulty: issues.difficulty,
+          estimatedMinutes: issues.estimatedMinutes,
+          score: issues.score,
+          scoreDiagnostic: issues.scoreDiagnostic,
+          createdAt: issues.createdAt,
+          updatedAt: issues.updatedAt,
+        })
+        .from(issues)
+        .innerJoin(repos, eq(issues.repoId, repos.id))
+        .orderBy(desc(issues.createdAt))
+        .limit(12),
+    ]);
+
+    const p95Latency = matchingLatency.p95MatchingLatencyMs;
+    return {
+      queueHealth: {
+        queueSize,
+        dispatchMatchingLatencySampleCount: matchingLatency.sampleCount,
+        dispatchMatchingLatencyMs: matchingLatency.lastMatchingLatencyMs,
+        averageDispatchMatchingLatencyMs: matchingLatency.averageMatchingLatencyMs,
+        p95DispatchMatchingLatencyMs: p95Latency,
+        databaseRankingRecommended:
+          queueSize > DB_RANKING_QUEUE_SIZE_THRESHOLD ||
+          (p95Latency !== null &&
+            p95Latency >= DB_RANKING_P95_LATENCY_THRESHOLD_MS),
+        databaseRankingThresholds: {
+          queueSize: DB_RANKING_QUEUE_SIZE_THRESHOLD,
+          p95MatchingLatencyMs: DB_RANKING_P95_LATENCY_THRESHOLD_MS,
+        },
+      },
+      recentRepositories,
+      recentIssues,
+    };
+  }
 
   /** Lists repositories with the filtering and pagination contract used by React-admin. */
   async listRepositories(
