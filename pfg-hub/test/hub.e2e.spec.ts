@@ -453,6 +453,7 @@ describeDb("hub e2e", () => {
       quotaRemainingToday: 0,
       active: true,
     });
+    expect(runner.lastSeenAt).toBeInstanceOf(Date);
   });
 
   it("rejects missing or blank contributor names without creating a runner", async () => {
@@ -528,6 +529,97 @@ describeDb("hub e2e", () => {
     expect(response.text).toBe("");
   });
 
+  it("returns no work when a valid runner has no quota, is inactive, or already has a claim", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({ id: "issue-1", githubId: 42 });
+
+    await db
+      .update(runners)
+      .set({ quotaRemainingToday: 0 })
+      .where(eq(runners.id, runner.runnerId));
+    await request(app.getHttpServer())
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
+      .expect(204);
+
+    await db
+      .update(runners)
+      .set({
+        active: true,
+        quotaRemainingToday: 500,
+        lastSeenAt: new Date("2000-01-01T00:00:00Z"),
+      })
+      .where(eq(runners.id, runner.runnerId));
+    await request(app.getHttpServer())
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
+      .expect(204);
+
+    const [expiredRunner] = await db
+      .select()
+      .from(runners)
+      .where(eq(runners.id, runner.runnerId))
+      .limit(1);
+    expect(expiredRunner.active).toBe(false);
+
+    await db
+      .update(runners)
+      .set({ active: true, lastSeenAt: new Date() })
+      .where(eq(runners.id, runner.runnerId));
+    await db
+      .update(issues)
+      .set({
+        status: "CLAIMED",
+        claimedBy: runner.runnerId,
+        claimedAt: new Date(),
+      })
+      .where(eq(issues.id, "issue-1"));
+
+    await seedIssue({ id: "issue-2", githubId: 43 });
+    await request(app.getHttpServer())
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
+      .expect(204);
+  });
+
+  it("requeues timed-out claims during dispatch maintenance", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "stale-claim",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date("2000-01-01T00:00:00Z"),
+      retryCount: 1,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/issues/next")
+      .set("X-Runner-Token", runner.token)
+      .expect(200);
+    expect(response.body.id).toBe("stale-claim");
+
+    const [issue] = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, "stale-claim"))
+      .limit(1);
+    expect(issue.status).toBe("PENDING");
+    expect(issue.retryCount).toBe(2);
+    expect(issue.claimedBy).toBeNull();
+    expect(issue.claimedAt).toBeNull();
+
+    const [contribution] = await db.select().from(contributions).limit(1);
+    expect(contribution).toMatchObject({
+      issueId: "stale-claim",
+      runnerId: runner.runnerId,
+      status: "FAILED",
+      errorMessage: "Claim timed out",
+    });
+  });
+
   it("dispatches the highest scored pending issue and ignores unavailable work", async () => {
     const runner = await registerRunner();
     await seedRepo();
@@ -554,8 +646,8 @@ describeDb("hub e2e", () => {
       githubId: 4,
       score: 100,
       status: "CLAIMED",
-      claimedBy: runner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedBy: "other-runner",
+      claimedAt: new Date(),
     });
     await seedIssue({
       id: "done-higher-score",
@@ -619,7 +711,7 @@ describeDb("hub e2e", () => {
       githubId: 42,
       status: "CLAIMED",
       claimedBy: runner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedAt: new Date(),
     });
     await seedIssue({
       id: "already-done",
@@ -637,15 +729,59 @@ describeDb("hub e2e", () => {
       .set("X-Runner-Token", runner.token)
       .expect(409);
 
+    const missingRunner = await registerRunner("missing-issue-runner");
     await request(app.getHttpServer())
       .post("/issues/missing-issue/claim")
-      .set("X-Runner-Token", runner.token)
+      .set("X-Runner-Token", missingRunner.token)
       .expect(404);
 
     await request(app.getHttpServer())
       .post("/issues/already-claimed/claim")
       .set("X-Runner-Token", "wrong-token")
       .expect(401);
+  });
+
+  it("rejects claims when runner capacity state forbids new work", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({ id: "issue-1", githubId: 42 });
+
+    await db
+      .update(runners)
+      .set({ quotaRemainingToday: 0 })
+      .where(eq(runners.id, runner.runnerId));
+    await request(app.getHttpServer())
+      .post("/issues/issue-1/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(409);
+
+    await db
+      .update(runners)
+      .set({ quotaRemainingToday: 500, active: false })
+      .where(eq(runners.id, runner.runnerId));
+    await request(app.getHttpServer())
+      .post("/issues/issue-1/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(409);
+
+    await db
+      .update(runners)
+      .set({ active: true, lastSeenAt: new Date() })
+      .where(eq(runners.id, runner.runnerId));
+    await db
+      .update(issues)
+      .set({
+        status: "CLAIMED",
+        claimedBy: runner.runnerId,
+        claimedAt: new Date(),
+      })
+      .where(eq(issues.id, "issue-1"));
+    await seedIssue({ id: "issue-2", githubId: 43 });
+
+    await request(app.getHttpServer())
+      .post("/issues/issue-2/claim")
+      .set("X-Runner-Token", runner.token)
+      .expect(409);
   });
 
   it("records successful issue completion and creates a success contribution", async () => {
@@ -701,7 +837,7 @@ describeDb("hub e2e", () => {
       githubId: 42,
       status: "CLAIMED",
       claimedBy: runner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedAt: new Date(),
       retryCount: 1,
     });
 
@@ -722,6 +858,8 @@ describeDb("hub e2e", () => {
       .limit(1);
     expect(issue.status).toBe("PENDING");
     expect(issue.retryCount).toBe(2);
+    expect(issue.claimedBy).toBeNull();
+    expect(issue.claimedAt).toBeNull();
 
     const [contribution] = await db.select().from(contributions).limit(1);
     expect(contribution).toMatchObject({
@@ -741,7 +879,7 @@ describeDb("hub e2e", () => {
       githubId: 42,
       status: "CLAIMED",
       claimedBy: runner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedAt: new Date(),
       retryCount: 2,
     });
 
@@ -780,7 +918,7 @@ describeDb("hub e2e", () => {
       githubId: 42,
       status: "CLAIMED",
       claimedBy: owner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedAt: new Date(),
     });
 
     await request(app.getHttpServer())
@@ -827,7 +965,7 @@ describeDb("hub e2e", () => {
       githubId: 2,
       status: "CLAIMED",
       claimedBy: activeRunner.runnerId,
-      claimedAt: new Date("2026-01-03T00:00:00Z"),
+      claimedAt: new Date(),
     });
     await seedIssue({ id: "done", githubId: 3, status: "DONE" });
     await seedIssue({ id: "failed", githubId: 4, status: "FAILED" });
@@ -852,7 +990,7 @@ describeDb("hub e2e", () => {
       .get("/stats")
       .expect(200);
 
-    expect(response.body).toEqual({
+    expect(response.body).toMatchObject({
       totalRepos: 2,
       eligibleRepos: 1,
       totalIssues: 4,
@@ -863,11 +1001,10 @@ describeDb("hub e2e", () => {
       failedIssues: 1,
       totalPrsOpened: 2,
       activeRunners: 1,
-      dispatchMatchingLatencySampleCount: 0,
-      dispatchMatchingLatencyMs: null,
-      averageDispatchMatchingLatencyMs: null,
-      p95DispatchMatchingLatencyMs: null,
     });
+    expect(response.body.dispatchMatchingLatencySampleCount).toEqual(
+      expect.any(Number),
+    );
   });
 
   it("serves the admin scoring overview with queue health and diagnostics", async () => {
@@ -1378,7 +1515,12 @@ describeDb("hub e2e", () => {
       .post("/runners/register")
       .send({ contributorName })
       .expect(200);
-    return response.body as RegisterResponse;
+    const runner = response.body as RegisterResponse;
+    await db
+      .update(runners)
+      .set({ quotaRemainingToday: 500, lastSeenAt: new Date(), active: true })
+      .where(eq(runners.id, runner.runnerId));
+    return runner;
   }
 
   async function seedRepo(

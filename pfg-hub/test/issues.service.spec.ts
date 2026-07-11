@@ -15,8 +15,8 @@ const runner: Runner = {
   id: "runner-1",
   token: "token-1",
   contributorName: "octocat",
-  quotaRemainingToday: 0,
-  lastSeenAt: null,
+  quotaRemainingToday: 500,
+  lastSeenAt: new Date("2026-01-01T00:00:00Z"),
   active: true,
   preferences: {},
   createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -97,6 +97,7 @@ function createIssuesService(options: {
   } as unknown as Database;
   const runnersService = {
     validateToken: vi.fn(async (_token: string) => options.runner ?? runner),
+    expireInactiveRunners: vi.fn(async (_cutoff: Date) => undefined),
   } as unknown as RunnersService;
   const scoringService = {
     assessRunnerPreferences: vi.fn(() => ({
@@ -107,7 +108,12 @@ function createIssuesService(options: {
     matchRunnerPreferences: vi.fn(() => 0),
   } as unknown as ScoringService;
   const runtimeConfigService = {
-    get: vi.fn(async () => options.issueMaxRetries ?? 3),
+    get: vi.fn(async (key: string) => {
+      if (key === "issueClaimTimeoutMs") return 2 * 60 * 60 * 1000;
+      if (key === "runnerHeartbeatTimeoutMs") return 30 * 60 * 1000;
+      if (key === "queueMaintenanceBatchSize") return 100;
+      return options.issueMaxRetries ?? 3;
+    }),
   } as unknown as RuntimeConfigService;
   const dispatchMetricsService = {
     recordMatchingLatency: vi.fn(),
@@ -150,7 +156,7 @@ describe("IssuesService", () => {
   // database row plus repository URL into the public IssueDto shape.
   it("validates the runner token and returns the highest-priority pending issue", async () => {
     const { service, runnersService } = createIssuesService({
-      selectResults: [[withRepo(issue)]],
+      selectResults: [[], [], [withRepo(issue)]],
     });
 
     const dto = await service.getNextIssue("token-1");
@@ -169,9 +175,64 @@ describe("IssuesService", () => {
   // An empty queue is represented as null at the service layer; the controller
   // turns that into the HTTP 204 response.
   it("returns null when no pending issue is available", async () => {
-    const { service } = createIssuesService({ selectResults: [[]] });
+    const { service } = createIssuesService({ selectResults: [[], [], []] });
 
     await expect(service.getNextIssue("token-1")).resolves.toBeNull();
+  });
+
+  it("returns null when runner quota or liveness prevents dispatch", async () => {
+    const noQuota = createIssuesService({
+      runner: { ...runner, quotaRemainingToday: 0 },
+      selectResults: [[], []],
+    }).service;
+    await expect(noQuota.getNextIssue("token-1")).resolves.toBeNull();
+
+    const inactive = createIssuesService({
+      runner: { ...runner, active: false },
+      selectResults: [[], []],
+    }).service;
+    await expect(inactive.getNextIssue("token-1")).resolves.toBeNull();
+  });
+
+  it("returns null when the runner already has a claimed issue", async () => {
+    const { service } = createIssuesService({
+      selectResults: [[], [{ id: "active-claim" }]],
+    });
+
+    await expect(service.getNextIssue("token-1")).resolves.toBeNull();
+  });
+
+  it("records timed-out claims as failed attempts before dispatch", async () => {
+    const staleClaim: Issue = {
+      ...issue,
+      status: "CLAIMED",
+      claimedBy: runner.id,
+      claimedAt: new Date("2026-01-01T00:00:00Z"),
+      retryCount: 1,
+    };
+    const { service, txUpdate, txInsert } = createIssuesService({
+      selectResults: [[staleClaim], [], []],
+    });
+
+    await expect(service.getNextIssue("token-1")).resolves.toBeNull();
+
+    expect(txUpdate.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "PENDING",
+        retryCount: 2,
+        claimedBy: null,
+        claimedAt: null,
+        updatedAt: expect.any(Date),
+      }),
+    );
+    expect(txInsert.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issueId: "issue-1",
+        runnerId: "runner-1",
+        status: "FAILED",
+        errorMessage: "Claim timed out",
+      }),
+    );
   });
 
   it("prefers a compatible issue over a higher globally scored issue", async () => {
@@ -179,6 +240,8 @@ describe("IssuesService", () => {
     const higherScored: Issue = { ...issue, id: "higher-scored", score: 95 };
     const { service, scoringService } = createIssuesService({
       selectResults: [
+        [],
+        [],
         [
           {
             ...withRepo(preferred),
@@ -228,7 +291,7 @@ describe("IssuesService", () => {
     };
     const { service, update } = createIssuesService({
       updateRows: [claimedIssue],
-      selectResults: [[withRepo(claimedIssue)]],
+      selectResults: [[], [], [withRepo(claimedIssue)]],
     });
 
     const dto = await service.claimIssue("issue-1", "token-1");
@@ -251,7 +314,7 @@ describe("IssuesService", () => {
   it("distinguishes missing issues from already claimed issues", async () => {
     const missing = createIssuesService({
       updateRows: [],
-      selectResults: [[]],
+      selectResults: [[], [], []],
     }).service;
     await expect(
       missing.claimIssue("missing", "token-1"),
@@ -259,7 +322,7 @@ describe("IssuesService", () => {
 
     const alreadyClaimed = createIssuesService({
       updateRows: [],
-      selectResults: [[{ ...issue, status: "CLAIMED" }]],
+      selectResults: [[], [], [{ ...issue, status: "CLAIMED" }]],
     }).service;
     await expect(
       alreadyClaimed.claimIssue("issue-1", "token-1"),

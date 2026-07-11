@@ -6,10 +6,10 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DATABASE, Database } from "../db/database.module";
-import { contributions, Issue, issues, repos } from "../db/schema";
+import { contributions, Issue, issues, repos, Runner } from "../db/schema";
 import { DispatchMetricsService } from "../dispatch-metrics/dispatch-metrics.service";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
@@ -44,7 +44,12 @@ export class IssuesService {
   /** Returns the highest-affinity pending issue available to a valid runner. */
   async getNextIssue(runnerToken: string): Promise<IssueDto | null> {
     const startedAt = Date.now();
+    await this.runnersService.validateToken(runnerToken);
+    await this.performQueueMaintenance();
     const runner = await this.runnersService.validateToken(runnerToken);
+    if (!(await this.canRunnerReceiveWork(runner))) {
+      return null;
+    }
 
     const rows = await this.db
       .select({
@@ -90,8 +95,7 @@ export class IssuesService {
           issue: DispatchIssue;
           affinity: number;
           diagnostic: ScoringDiagnostic;
-        } =>
-          candidate !== null,
+        } => candidate !== null,
       )
       .sort(
         (left, right) =>
@@ -122,7 +126,10 @@ export class IssuesService {
 
   /** Atomically assigns a pending issue to the authenticated runner. */
   async claimIssue(id: string, runnerToken: string): Promise<IssueDto> {
+    await this.runnersService.validateToken(runnerToken);
+    await this.performQueueMaintenance();
     const runner = await this.runnersService.validateToken(runnerToken);
+    await this.assertRunnerCanClaim(runner);
     const now = new Date();
 
     const [claimed] = await this.db
@@ -184,6 +191,8 @@ export class IssuesService {
         .set({
           status: nextStatus,
           retryCount,
+          claimedBy: nextStatus === "PENDING" ? null : issue.claimedBy,
+          claimedAt: nextStatus === "PENDING" ? null : issue.claimedAt,
           updatedAt: new Date(),
         })
         .where(eq(issues.id, id));
@@ -198,6 +207,103 @@ export class IssuesService {
         errorMessage: request.errorMessage ?? null,
       });
     });
+  }
+
+  /** Performs bounded queue cleanup before dispatch decisions read queue state. */
+  private async performQueueMaintenance(): Promise<void> {
+    const [
+      issueClaimTimeoutMs,
+      runnerHeartbeatTimeoutMs,
+      queueMaintenanceBatchSize,
+    ] = await Promise.all([
+      this.runtimeConfigService.get("issueClaimTimeoutMs"),
+      this.runtimeConfigService.get("runnerHeartbeatTimeoutMs"),
+      this.runtimeConfigService.get("queueMaintenanceBatchSize"),
+    ]);
+    const now = new Date();
+
+    await this.reclaimTimedOutClaims(
+      new Date(now.getTime() - issueClaimTimeoutMs),
+      queueMaintenanceBatchSize,
+      now,
+    );
+    await this.runnersService.expireInactiveRunners(
+      new Date(now.getTime() - runnerHeartbeatTimeoutMs),
+    );
+  }
+
+  /** Converts timed-out claims into failed attempts without letting one poll drain the whole backlog. */
+  private async reclaimTimedOutClaims(
+    cutoff: Date,
+    batchSize: number,
+    now: Date,
+  ): Promise<void> {
+    const timedOutClaims = await this.db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.status, "CLAIMED"), lt(issues.claimedAt, cutoff)))
+      .limit(batchSize);
+    if (timedOutClaims.length === 0) return;
+
+    const issueMaxRetries =
+      await this.runtimeConfigService.get("issueMaxRetries");
+
+    await this.db.transaction(async (tx) => {
+      for (const issue of timedOutClaims) {
+        const retryCount = issue.retryCount + 1;
+        const nextStatus = retryCount < issueMaxRetries ? "PENDING" : "FAILED";
+
+        await tx
+          .update(issues)
+          .set({
+            status: nextStatus,
+            retryCount,
+            claimedBy: nextStatus === "PENDING" ? null : issue.claimedBy,
+            claimedAt: nextStatus === "PENDING" ? null : issue.claimedAt,
+            updatedAt: now,
+          })
+          .where(eq(issues.id, issue.id));
+
+        if (issue.claimedBy) {
+          await tx.insert(contributions).values({
+            id: randomUUID(),
+            issueId: issue.id,
+            runnerId: issue.claimedBy,
+            prUrl: null,
+            status: "FAILED",
+            tokensUsed: null,
+            errorMessage: "Claim timed out",
+            createdAt: now,
+          });
+        }
+      }
+    });
+  }
+
+  /** Applies runner capacity invariants before the hub offers or claims work. */
+  private async canRunnerReceiveWork(runner: Runner): Promise<boolean> {
+    if (!runner.active || runner.quotaRemainingToday <= 0) return false;
+    return !(await this.runnerHasActiveClaim(runner.id));
+  }
+
+  /** Raises claim-specific conflicts while GET /issues/next can stay a quiet 204. */
+  private async assertRunnerCanClaim(runner: Runner): Promise<void> {
+    if (!runner.active) throw new ConflictException("Runner is inactive");
+    if (runner.quotaRemainingToday <= 0)
+      throw new ConflictException("Runner quota exhausted");
+    if (await this.runnerHasActiveClaim(runner.id)) {
+      throw new ConflictException("Runner already has a claimed issue");
+    }
+  }
+
+  /** Detects the current one-active-claim-per-runner policy from persisted queue state. */
+  private async runnerHasActiveClaim(runnerId: string): Promise<boolean> {
+    const [activeClaim] = await this.db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(and(eq(issues.status, "CLAIMED"), eq(issues.claimedBy, runnerId)))
+      .limit(1);
+    return activeClaim !== undefined;
   }
 
   /** Reloads an issue with repository context before returning it to clients. */

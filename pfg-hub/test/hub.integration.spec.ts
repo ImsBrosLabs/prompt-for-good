@@ -10,7 +10,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AppModule } from "../src/app.module";
 import { DATABASE, Database, PG_POOL } from "../src/db/database.module";
-import { issues, repos } from "../src/db/schema";
+import { issues, repos, runners } from "../src/db/schema";
 
 const runDbTests = process.env.RUN_DB_TESTS === "true";
 const describeDb = runDbTests ? describe : describe.skip;
@@ -58,6 +58,10 @@ describeDb("hub integration", () => {
 
     const token = register.body.token as string;
     const runnerId = register.body.runnerId as string;
+    await db
+      .update(runners)
+      .set({ quotaRemainingToday: 500, lastSeenAt: new Date(), active: true })
+      .where(eq(runners.id, runnerId));
 
     const [repo] = await db
       .insert(repos)
