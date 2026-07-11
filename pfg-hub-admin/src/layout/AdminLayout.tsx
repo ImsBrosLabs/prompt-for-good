@@ -1,4 +1,5 @@
 import { Box, Typography } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import {
   AppBar,
   Layout,
@@ -14,9 +15,10 @@ function AdminAppBar(props: AppBarProps) {
       color="inherit"
       elevation={0}
       sx={{
-        color: "#17211f",
-        backgroundColor: "rgba(255, 255, 255, 0.96)",
-        borderBottom: "1px solid #e1e7e5",
+        color: (theme) => theme.palette.text.primary,
+        backgroundColor: (theme) =>
+          alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.94 : 0.96),
+        borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.1 }}>
@@ -42,9 +44,9 @@ function AdminAppBar(props: AppBarProps) {
             display: { xs: "none", md: "inline-flex" },
             px: 0.8,
             py: 0.3,
-            color: "#a64829",
-            backgroundColor: "#fff0e9",
-            border: "1px solid #f4d4c6",
+            color: (theme) => theme.palette.secondary.main,
+            backgroundColor: (theme) => alpha(theme.palette.secondary.main, 0.12),
+            border: (theme) => `1px solid ${alpha(theme.palette.secondary.main, 0.28)}`,
             borderRadius: 1,
             fontSize: 10,
             fontWeight: 800,
@@ -61,13 +63,13 @@ function AdminAppBar(props: AppBarProps) {
           width: "1px",
           height: 22,
           mx: 2,
-          backgroundColor: "#dfe5e3",
+          backgroundColor: (theme) => theme.palette.divider,
         }}
       />
       <TitlePortal
         sx={{
           flex: 1,
-          color: "#596763",
+          color: (theme) => theme.palette.text.secondary,
           fontSize: 14,
           fontWeight: 600,
         }}
@@ -88,8 +90,8 @@ export function AdminLayout(props: LayoutProps) {
           py: { xs: 1.5, sm: 2.5 },
         },
         "& .RaSidebar-paper": {
-          backgroundColor: "#fbfcfc",
-          borderRight: "1px solid #e1e7e5",
+          backgroundColor: (theme) => theme.palette.background.paper,
+          borderRight: (theme) => `1px solid ${theme.palette.divider}`,
         },
         "& .RaMenu-root": {
           px: 1,
@@ -103,14 +105,14 @@ export function AdminLayout(props: LayoutProps) {
           fontWeight: 550,
         },
         "& .RaMenuItemLink-root:hover": {
-          backgroundColor: "#edf4f2",
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
         },
         "& .RaMenuItemLink-active": {
-          color: "#105f52",
-          backgroundColor: "#e3f0ed",
+          color: (theme) => theme.palette.primary.main,
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.14),
         },
         "& .RaMenuItemLink-active .RaMenuItemLink-icon": {
-          color: "#147565",
+          color: (theme) => theme.palette.primary.main,
         },
       }}
     />

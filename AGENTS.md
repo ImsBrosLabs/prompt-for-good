@@ -1,5 +1,9 @@
 # Implementation Guidelines
 
+## Git Changes
+
+Do not stage or commit changes unless the user explicitly asks for it first.
+
 ## Function Comments
 
 Add a concise orienting comment immediately before every function whose logic is

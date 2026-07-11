@@ -11,15 +11,15 @@ import { ContributionsList } from "./resources/contributions";
 import { IssuesList } from "./resources/issues";
 import { RepositoriesList } from "./resources/repositories";
 import { RunnersList } from "./resources/runners";
-import { adminTheme } from "./theme";
+import { adminDarkTheme, adminLightTheme } from "./theme";
 export default function App() {
   return (
     <Admin
       title="Prompt for Good Admin"
       dataProvider={dataProvider}
       authProvider={authProvider}
-      theme={adminTheme}
-      darkTheme={null}
+      theme={adminLightTheme}
+      darkTheme={adminDarkTheme}
       loginPage={LoginPage}
       layout={AdminLayout}
       requireAuth
