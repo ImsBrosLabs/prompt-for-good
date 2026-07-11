@@ -10,6 +10,25 @@ export const ingestionRunStatuses = [
   "RATE_LIMITED",
 ] as const;
 export const issueDifficulties = ["easy", "medium", "hard"] as const;
+export const runtimeConfigSources = [
+  "database",
+  "environment",
+  "default",
+] as const;
+export const runtimeConfigValueTypes = [
+  "boolean",
+  "integer",
+  "string",
+] as const;
+const runtimeConfigValueSchema = [
+  { type: "boolean" as const },
+  { type: "integer" as const },
+  { type: "string" as const },
+];
+const nullableRuntimeConfigValueSchema = [
+  ...runtimeConfigValueSchema,
+  { type: "null" as const },
+];
 
 export class RunnerPreferencesDto implements RunnerPreferences {
   @ApiPropertyOptional({ example: ["owner/repo"], type: [String] })
@@ -316,6 +335,95 @@ export class IngestionRunDto {
     type: String,
   })
   finishedAt?: string | null;
+}
+
+export class RuntimeConfigMetadataDto {
+  @ApiProperty({ example: "ISSUE_MIN_SCORE", type: String })
+  env!: string;
+
+  @ApiProperty({ example: "Minimum issue score", type: String })
+  label!: string;
+
+  @ApiProperty({
+    example:
+      "Minimum score required to add a discovered GitHub issue to the work queue.",
+    type: String,
+  })
+  description!: string;
+
+  @ApiProperty({ example: "Issues", type: String })
+  category!: string;
+
+  @ApiProperty({
+    description: "Whether the effective value is hidden in admin responses",
+    type: Boolean,
+  })
+  secret!: boolean;
+
+  @ApiProperty({ enum: runtimeConfigValueTypes, type: String })
+  valueType!: (typeof runtimeConfigValueTypes)[number];
+
+  @ApiProperty({
+    description: "Catalog fallback value, hidden as null when secret is true",
+    oneOf: nullableRuntimeConfigValueSchema,
+    type: Array,
+  })
+  defaultValue!: unknown;
+}
+
+export class RuntimeConfigItemDto {
+  @ApiProperty({ example: "issueMinScore", type: String })
+  id!: string;
+
+  @ApiProperty({ example: "issueMinScore", type: String })
+  key!: string;
+
+  @ApiProperty({
+    description: "Effective value, hidden as null when secret is true",
+    oneOf: nullableRuntimeConfigValueSchema,
+    type: Array,
+  })
+  value!: unknown;
+
+  @ApiProperty({
+    description:
+      "Raw environment variable value for this catalog entry, hidden as null when secret is true or unset",
+    nullable: true,
+    type: String,
+  })
+  environmentValue!: string | null;
+
+  @ApiProperty({ enum: runtimeConfigSources, type: String })
+  source!: (typeof runtimeConfigSources)[number];
+
+  @ApiProperty({ type: Boolean })
+  hasDatabaseOverride!: boolean;
+
+  @ApiProperty({ format: "date-time", nullable: true, type: String })
+  updatedAt!: string | null;
+
+  @ApiProperty({ nullable: true, type: String })
+  updatedBy!: string | null;
+
+  @ApiProperty({ type: RuntimeConfigMetadataDto })
+  metadata!: RuntimeConfigMetadataDto;
+}
+
+export class RuntimeConfigListResponseDto {
+  @ApiProperty({ type: [RuntimeConfigItemDto] })
+  data!: RuntimeConfigItemDto[];
+
+  @ApiProperty({ example: 10, format: "int32", type: Number })
+  total!: number;
+}
+
+export class RuntimeConfigUpdateRequestDto {
+  @ApiProperty({
+    description: "JSON value validated by the catalog schema for this key",
+    oneOf: runtimeConfigValueSchema,
+    type: Array,
+  })
+  value!: unknown;
 }
 
 export class GitHubDiscoveryResultDto {

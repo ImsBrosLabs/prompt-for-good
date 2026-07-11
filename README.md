@@ -89,8 +89,7 @@ PostgreSQL locally.
 
 ```bash
 cp .env.example .env
-docker compose build
-docker compose up hub admin
+docker compose up --build hub admin
 ```
 
 The hub and admin are available at:
@@ -100,6 +99,18 @@ http://localhost:8080/actuator/health
 http://localhost:8080/docs
 http://localhost:8080/docs-json
 http://localhost:5173
+```
+
+Source changes under `pfg-hub/` and `pfg-hub-admin/` are bind-mounted into the
+containers. The Docker development services enable polling-based watchers, so
+Nest and Vite should reload without `docker compose down`, deleting containers,
+or recreating volumes.
+
+Rebuild only when Docker inputs change, such as `Dockerfile.dev`,
+`package.json`, or `package-lock.json`:
+
+```bash
+docker compose up --build hub admin
 ```
 
 Run checks in Docker:

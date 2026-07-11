@@ -4,10 +4,10 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
-import { AppConfig } from "../src/config";
 import { Database } from "../src/db/database.module";
 import { Issue, Runner } from "../src/db/schema";
 import { IssuesService } from "../src/issues/issues.service";
+import { RuntimeConfigService } from "../src/runtime-config/runtime-config.service";
 import { RunnersService } from "../src/runners/runners.service";
 import { ScoringService } from "../src/scoring/scoring.service";
 
@@ -20,27 +20,6 @@ const runner: Runner = {
   active: true,
   preferences: {},
   createdAt: new Date("2026-01-01T00:00:00Z"),
-};
-
-const config: AppConfig = {
-  corsOrigins: ["http://localhost:5173"],
-  port: 8080,
-  httpsEnabled: false,
-  httpsCertPath: "./certs/hub.pfg.local.pem",
-  httpsKeyPath: "./certs/hub.pfg.local-key.pem",
-  databaseUrl: "postgresql://test",
-  githubToken: "test-github-token",
-  adminKey: "test-admin-key",
-  issueMaxRetries: 3,
-  issueMinScore: 60,
-  githubIngestionEnabled: false,
-  githubIngestionCron: "0 */6 * * *",
-  githubRecrawlAfterMs: 6 * 60 * 60 * 1000,
-  githubMaxRetries: 3,
-  githubBackoffBaseMs: 1000,
-  githubDiscoveryMaxPagesPerLabel: 2,
-  githubDiscoveryMaxRepositories: 50,
-  githubMinRateLimitRemaining: 5,
 };
 
 const issue: Issue = {
@@ -99,6 +78,7 @@ function createIssuesService(options: {
   selectResults?: SelectRow[];
   updateRows?: Issue[];
   runner?: Runner;
+  issueMaxRetries?: number;
 }) {
   const select = createSelectChain(options.selectResults ?? []);
   const update = createUpdateChain(options.updateRows ?? []);
@@ -120,9 +100,17 @@ function createIssuesService(options: {
   const scoringService = {
     matchRunnerPreferences: vi.fn(() => 0),
   } as unknown as ScoringService;
+  const runtimeConfigService = {
+    get: vi.fn(async () => options.issueMaxRetries ?? 3),
+  } as unknown as RuntimeConfigService;
 
   return {
-    service: new IssuesService(db, runnersService, scoringService, config),
+    service: new IssuesService(
+      db,
+      runnersService,
+      scoringService,
+      runtimeConfigService,
+    ),
     select,
     update,
     txUpdate,
@@ -130,6 +118,7 @@ function createIssuesService(options: {
     transaction,
     runnersService,
     scoringService,
+    runtimeConfigService,
   };
 }
 

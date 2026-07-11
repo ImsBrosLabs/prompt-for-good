@@ -1,19 +1,29 @@
 import "reflect-metadata";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { AppConfig } from "../src/config";
 import { GitHubService } from "../src/github/github.service";
+import {
+  RuntimeConfigChange,
+  RuntimeConfigService,
+} from "../src/runtime-config/runtime-config.service";
 
-const baseConfig: AppConfig = {
-  corsOrigins: ["http://localhost:5173"],
-  port: 8080,
-  httpsEnabled: false,
-  httpsCertPath: "./certs/hub.pfg.local.pem",
-  httpsKeyPath: "./certs/hub.pfg.local-key.pem",
-  databaseUrl: "postgresql://pfg:pfg@localhost:5432/pfg",
-  githubToken: "test-token",
-  adminKey: "test-admin-key",
+type TestRuntimeConfig = {
+  issueMaxRetries: number;
+  issueMinScore: number;
+  githubToken: string;
+  githubIngestionEnabled: boolean;
+  githubIngestionCron: string;
+  githubRecrawlAfterMs: number;
+  githubMaxRetries: number;
+  githubBackoffBaseMs: number;
+  githubDiscoveryMaxPagesPerLabel: number;
+  githubDiscoveryMaxRepositories: number;
+  githubMinRateLimitRemaining: number;
+};
+
+const baseRuntimeConfig: TestRuntimeConfig = {
   issueMaxRetries: 3,
   issueMinScore: 60,
+  githubToken: "test-token",
   githubIngestionEnabled: false,
   githubIngestionCron: "0 */6 * * *",
   githubRecrawlAfterMs: 6 * 60 * 60 * 1000,
@@ -208,9 +218,9 @@ describe("GitHubService discovery limits", () => {
     );
   });
 
-  it("uses retry-after before exponential backoff jitter", () => {
+  it("uses retry-after before exponential backoff jitter", async () => {
     const service = createService();
-    const delayMs = callBackoffDelayMs(
+    const delayMs = await callBackoffDelayMs(
       service,
       responseWithHeaders(403, {
         "retry-after": "2",
@@ -221,11 +231,11 @@ describe("GitHubService discovery limits", () => {
     expect(delayMs).toBe(2000);
   });
 
-  it("uses x-ratelimit-reset when primary quota is exhausted", () => {
+  it("uses x-ratelimit-reset when primary quota is exhausted", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const service = createService();
-    const delayMs = callBackoffDelayMs(
+    const delayMs = await callBackoffDelayMs(
       service,
       responseWithHeaders(429, {
         "x-ratelimit-remaining": "0",
@@ -239,23 +249,21 @@ describe("GitHubService discovery limits", () => {
   });
 
   it("detects CI, tests and supported ecosystems from the repository tree", async () => {
-    const service = createService();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        jsonResponse(
-          {
-            tree: [
-              { path: ".github/workflows/checks.yml", type: "blob" },
-              { path: "src/widget.spec.ts", type: "blob" },
-              { path: "package.json", type: "blob" },
-              { path: "pyproject.toml", type: "blob" },
-            ],
-          },
-          { "x-ratelimit-remaining": "100" },
-        ),
+    const service = createService({ githubToken: "runtime-token" });
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(
+        {
+          tree: [
+            { path: ".github/workflows/checks.yml", type: "blob" },
+            { path: "src/widget.spec.ts", type: "blob" },
+            { path: "package.json", type: "blob" },
+            { path: "pyproject.toml", type: "blob" },
+          ],
+        },
+        { "x-ratelimit-remaining": "100" },
       ),
     );
+    vi.stubGlobal("fetch", fetchMock);
 
     const signals = await callInspectRepository(
       service,
@@ -269,14 +277,82 @@ describe("GitHubService discovery limits", () => {
       testsDetected: true,
       ecosystems: ["npm", "pip"],
     });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer runtime-token",
+        }),
+      }),
+    );
+  });
+
+  it("reconfigures the ingestion cron when admin runtime values change", async () => {
+    const runtimeConfig = { ...baseRuntimeConfig };
+    let listener:
+      ((change: RuntimeConfigChange) => void | Promise<void>) | undefined;
+    const runtimeConfigService = {
+      get: vi.fn(async (key: keyof TestRuntimeConfig) => runtimeConfig[key]),
+      onChange: vi.fn(
+        (
+          registeredListener: (
+            change: RuntimeConfigChange,
+          ) => void | Promise<void>,
+        ) => {
+          listener = registeredListener;
+          return vi.fn();
+        },
+      ),
+    } as unknown as RuntimeConfigService;
+    const jobs = new Map<string, { stop: () => void }>();
+    const schedulerRegistry = {
+      addCronJob: vi.fn((name: string, job: { stop: () => void }) => {
+        jobs.set(name, job);
+      }),
+      getCronJob: vi.fn((name: string) => {
+        const job = jobs.get(name);
+        if (!job) throw new Error("Missing cron job");
+        return job;
+      }),
+      deleteCronJob: vi.fn((name: string) => {
+        jobs.delete(name);
+      }),
+    };
+    const service = new GitHubService(
+      {} as never,
+      {} as never,
+      runtimeConfigService,
+      schedulerRegistry as never,
+    );
+
+    await service.onApplicationBootstrap();
+    expect(schedulerRegistry.addCronJob).not.toHaveBeenCalled();
+
+    runtimeConfig.githubIngestionEnabled = true;
+    await listener?.({ key: "githubIngestionEnabled", operation: "set" });
+    expect(schedulerRegistry.addCronJob).toHaveBeenCalledTimes(1);
+
+    runtimeConfig.githubIngestionCron = "0 */2 * * *";
+    await listener?.({ key: "githubIngestionCron", operation: "set" });
+    expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
+      "github-ingestion",
+    );
+    expect(schedulerRegistry.addCronJob).toHaveBeenCalledTimes(2);
+
+    service.onApplicationShutdown();
   });
 });
 
-function createService(config: Partial<AppConfig> = {}): GitHubService {
+function createService(config: Partial<TestRuntimeConfig> = {}): GitHubService {
+  const runtimeConfig = { ...baseRuntimeConfig, ...config };
+  const runtimeConfigService = {
+    get: vi.fn(async (key: keyof TestRuntimeConfig) => runtimeConfig[key]),
+  } as unknown as RuntimeConfigService;
+
   return new GitHubService(
     {} as never,
     {} as never,
-    { ...baseConfig, ...config },
+    runtimeConfigService,
     {} as never,
   );
 }
@@ -337,10 +413,10 @@ function responseWithHeaders(
 function callBackoffDelayMs(
   service: GitHubService,
   response: Response,
-): number {
+): Promise<number> {
   return (
     service as unknown as {
-      backoffDelayMs(attempt: number, response: Response): number;
+      backoffDelayMs(attempt: number, response: Response): Promise<number>;
     }
   ).backoffDelayMs(0, response);
 }

@@ -2,6 +2,10 @@ name: prompt-for-good
 
 x-hub-environment: &hub-environment
   DATABASE_URL: postgresql://pfg:pfg@postgres:5432/pfg
+  CHOKIDAR_USEPOLLING: "true"
+  WATCHPACK_POLLING: "true"
+  TSC_WATCHFILE: DynamicPriorityPolling
+  TSC_WATCHDIRECTORY: DynamicPriorityPolling
 
 x-hub-test-environment: &hub-test-environment
   DATABASE_URL: postgresql://pfg:pfg@postgres-test:5432/pfg_test
@@ -93,6 +97,9 @@ services:
       VITE_PFG_HUB_API_URL: ${VITE_PFG_HUB_API_URL:-/api}
       PFG_HUB_PROXY_TARGET: ${PFG_HUB_PROXY_TARGET:-}
       PFG_HUB_PROXY_HOST: hub
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_USE_POLLING: "true"
+      VITE_POLL_INTERVAL: "100"
     ports:
       - "${PFG_HUB_ADMIN_PORT:-5173}:5173"
     volumes: *admin-volumes

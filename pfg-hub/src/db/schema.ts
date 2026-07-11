@@ -156,6 +156,21 @@ export const ingestionRuns = pgTable(
   }),
 );
 
+export type RuntimeConfigJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | RuntimeConfigJsonValue[]
+  | { [key: string]: RuntimeConfigJsonValue };
+
+export const runtimeConfigOverrides = pgTable("runtime_config_override", {
+  key: varchar("key", { length: 128 }).primaryKey(),
+  value: jsonb("value").$type<RuntimeConfigJsonValue>().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  updatedBy: varchar("updated_by", { length: 255 }),
+});
+
 export type Repo = typeof repos.$inferSelect;
 export type NewRepo = typeof repos.$inferInsert;
 export type Issue = typeof issues.$inferSelect;
@@ -166,3 +181,6 @@ export type Contribution = typeof contributions.$inferSelect;
 export type NewContribution = typeof contributions.$inferInsert;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 export type NewIngestionRun = typeof ingestionRuns.$inferInsert;
+export type RuntimeConfigOverride = typeof runtimeConfigOverrides.$inferSelect;
+export type NewRuntimeConfigOverride =
+  typeof runtimeConfigOverrides.$inferInsert;
