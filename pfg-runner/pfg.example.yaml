@@ -19,3 +19,13 @@ hub:
 contributor:
   name: "YourName"                        # your name or GitHub handle
   github_token: ${GITHUB_TOKEN}           # GitHub PAT with repo scope
+
+project_preferences:
+  languages: ["python", "typescript"]     # empty list means no language constraint
+  ecosystems: ["npm", "pip"]              # match at least one listed ecosystem
+  allow_repos: []                         # owner/repo only; empty means any repo
+  block_repos: ["owner/repo-to-avoid"]    # owner/repo only; always excluded
+  labels: ["bug", "good first issue"]     # match at least one listed issue label
+  licenses: ["mit", "apache-2.0"]         # empty list means no license constraint
+  max_difficulty: "medium"                # easy | medium | hard
+  max_estimated_minutes: 120              # reject larger estimated runtime

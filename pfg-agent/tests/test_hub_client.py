@@ -114,3 +114,42 @@ def test_get_next_issue_raises_after_retry_attempts(monkeypatch):
         client.get_next_issue()
 
     assert len(calls) == 3
+
+
+def test_heartbeat_sends_preferences(monkeypatch):
+    calls = []
+    request = httpx.Request("POST", "http://hub.test/runners/runner-1/heartbeat")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return httpx.Response(204, request=request)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient("http://hub.test", "token")
+    client.heartbeat(
+        "runner-1",
+        250,
+        {
+            "allowedRepos": ["acme/project"],
+            "maxDifficulty": "medium",
+        },
+    )
+
+    assert calls == [
+        (
+            "POST",
+            "http://hub.test/runners/runner-1/heartbeat",
+            {
+                "headers": {"X-Runner-Token": "token"},
+                "timeout": 10.0,
+                "json": {
+                    "quotaRemainingToday": 250,
+                    "preferences": {
+                        "allowedRepos": ["acme/project"],
+                        "maxDifficulty": "medium",
+                    },
+                },
+            },
+        ),
+    ]
