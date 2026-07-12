@@ -199,28 +199,22 @@ latency, and the admin scoring screen exposes queue health. Keep in-memory
 preference-aware dispatch until pending issues exceed 1000 or recent p95
 matching latency reaches 100 ms durably; then move ranking into the database.
 
-1. **Queue robustness**
-   - Reclaim or fail stale `CLAIMED` issues after a timeout.
-   - Account for runner quota when dispatching work.
-   - Mark runners inactive when heartbeat freshness expires.
-   - Prevent duplicate GitHub issues across recrawls and repository records.
-
-2. **Runtime API validation**
+1. **Runtime API validation**
    - Add structured request validation for DTOs.
    - Validate PR URLs, non-negative token counts, non-negative quota values and
      required completion fields.
 
-3. **Production security**
+2. **Production security**
    - Replace static admin-token authentication with scoped bearer auth such as
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-4. **Dashboard and missing API surface**
+3. **Dashboard and missing API surface**
    - Build the public hub dashboard for repositories, issues, pull requests,
      contributors, runners and token usage.
    - Add the documented `GET /repos` endpoint.
 
-5. **Operations and deployment**
+4. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.
