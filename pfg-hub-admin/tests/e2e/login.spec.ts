@@ -37,6 +37,7 @@ test("opens the public dashboard from login without authenticating", async ({
   await expect(
     page.getByRole("heading", { name: "Public hub dashboard" }),
   ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Admin" })).toHaveCount(0);
 });
 
 test("keeps the public dashboard usable when public repositories are unavailable", async ({

@@ -374,14 +374,6 @@ function PublicHeader() {
         </Stack>
         <Stack direction="row" spacing={0.5} alignItems="center">
           <ThemeModeButton />
-          <Button
-            href="/"
-            variant="outlined"
-            size="small"
-            sx={{ borderRadius: 1, textTransform: "none", fontWeight: 750 }}
-          >
-            Admin
-          </Button>
         </Stack>
       </Container>
     </Box>
