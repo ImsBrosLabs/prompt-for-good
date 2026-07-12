@@ -157,7 +157,9 @@ def open_pull_request(issue: Issue, patch: Patch) -> PullRequestResult:
     except GithubException as exc:
         details["status"] = "failed"
         details["githubError"] = _github_error_details(exc, "create_pull")
-        raise PullRequestError("GitHub pull request creation failed", {"pullRequest": details}) from exc
+        raise PullRequestError(
+            "GitHub pull request creation failed", {"pullRequest": details}
+        ) from exc
 
     details["status"] = "opened"
     details["url"] = pr.html_url
@@ -199,7 +201,9 @@ def _has_empty_index(work_path: Path) -> bool:
 
 
 # Pushes to an explicit URL so public clones can still authenticate without rewriting remotes.
-def _push_branch(work_path: Path, push_url: str, branch_name: str) -> subprocess.CompletedProcess[str]:
+def _push_branch(
+    work_path: Path, push_url: str, branch_name: str
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", "push", push_url, f"HEAD:{branch_name}"],
         cwd=work_path,

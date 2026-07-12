@@ -48,7 +48,9 @@ def test_verify_patch_reports_skipped_when_build_system_is_missing(tmp_path):
     _commit_file(tmp_path, "foo.txt", "old\n")
     diff = _diff_for_change(tmp_path, "foo.txt", "new\n")
 
-    result = verify_patch(CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1))
+    result = verify_patch(
+        CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1)
+    )
 
     assert result.success is True
     assert result.status == "skipped"
@@ -76,7 +78,9 @@ def test_verify_patch_captures_command_failure(monkeypatch, tmp_path):
         ],
     )
 
-    result = verify_patch(CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1))
+    result = verify_patch(
+        CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1)
+    )
 
     assert result.success is False
     assert result.status == "failed"
@@ -108,7 +112,9 @@ def test_verify_patch_captures_timeout(monkeypatch, tmp_path):
         lambda _repo_path: [sys.executable, "-c", "import time; time.sleep(1)"],
     )
 
-    result = verify_patch(CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1))
+    result = verify_patch(
+        CodeContext(repo_path=tmp_path, files={}), Patch(diff=diff, tokens_used=1)
+    )
 
     assert result.success is False
     assert result.details is not None
