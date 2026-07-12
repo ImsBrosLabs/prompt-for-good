@@ -1,4 +1,5 @@
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
+import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
 import QueryStatsOutlinedIcon from "@mui/icons-material/QueryStatsOutlined";
 import { Box, Typography } from "@mui/material";
 import { alpha } from "@mui/material/styles";
@@ -127,10 +128,15 @@ export function AdminLayout(props: LayoutProps) {
   );
 }
 
-/** Adds the operations route before the generated resource navigation. */
+/** Adds custom navigation before the generated resource menu. */
 function AdminMenu(props: MenuProps) {
   return (
     <Menu {...props}>
+      <Menu.Item
+        to="/dashboard"
+        primaryText="Public dashboard"
+        leftIcon={<PublicOutlinedIcon />}
+      />
       <Menu.Item
         to="/operations"
         primaryText="Operations"

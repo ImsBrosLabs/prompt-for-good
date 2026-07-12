@@ -257,10 +257,11 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-### Native admin development
+### Native dashboard and admin development
 
-The back-office app reads repositories, issues, runners, and contributions from
-the hub's `/admin/*` REST endpoints. Install dependencies and start Vite:
+The Vite app serves a public dashboard at `/dashboard` and an authenticated
+back-office for repository, issue, runner, contribution and configuration
+operations. Install dependencies and start Vite:
 
 ```bash
 cd pfg-hub-admin
@@ -306,6 +307,8 @@ Current endpoints:
 | `GET` | `/docs` | none | Swagger UI |
 | `GET` | `/docs-json` | none | OpenAPI JSON |
 | `GET` | `/stats` | none | Queue/contribution stats |
+| `GET` | `/repos` | none | Public repository list for the dashboard |
+| `GET` | `/token-usage` | none | Aggregate public token usage |
 | `POST` | `/runners/register` | none | Register a runner and receive a token |
 | `POST` | `/runners/:id/heartbeat` | `X-Runner-Token` | Update runner liveness/quota |
 | `GET` | `/issues/next` | `X-Runner-Token` | Fetch the next pending issue |
@@ -429,7 +432,6 @@ Agent/runner variables:
 - Finish the autonomous agent pipeline from patch generation to PR creation.
 - Extend runner preference coverage where contributors need finer control.
 - Add production-grade auth, token rotation, observability, and deployment.
-- Build a public dashboard for repositories, issues, runners, and contributions.
 
 ---
 

@@ -1,4 +1,5 @@
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import {
@@ -11,9 +12,11 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { type FormEvent, useState } from "react";
 import { useLogin } from "react-admin";
 import { useDocumentTitle } from "./pageTitles";
+import { ThemeModeButton } from "./ThemeModeButton";
 
 /** Renders the responsive branded login and delegates authentication to React-admin. */
 export function LoginPage() {
@@ -48,7 +51,8 @@ export function LoginPage() {
         display: "grid",
         gridTemplateColumns: { xs: "1fr", md: "minmax(320px, 42%) 1fr" },
         gridTemplateRows: { xs: "190px minmax(0, 1fr)", md: "1fr" },
-        backgroundColor: "#ffffff",
+        color: "text.primary",
+        backgroundColor: "background.default",
       }}
     >
       <Box
@@ -62,10 +66,11 @@ export function LoginPage() {
           justifyContent: "space-between",
           px: { xs: 3, sm: 5, lg: 7 },
           py: { xs: 2.5, md: 5 },
-          color: "#17211f",
-          backgroundColor: "#edf4f2",
-          borderRight: { md: "1px solid #dce6e3" },
-          borderBottom: { xs: "1px solid #dce6e3", md: 0 },
+          color: "text.primary",
+          backgroundColor: (theme) =>
+            alpha(theme.palette.primary.main, theme.palette.mode === "dark" ? 0.12 : 0.08),
+          borderRight: { md: (theme) => `1px solid ${theme.palette.divider}` },
+          borderBottom: { xs: (theme) => `1px solid ${theme.palette.divider}`, md: 0 },
           boxSizing: "border-box",
         }}
       >
@@ -81,7 +86,7 @@ export function LoginPage() {
               Prompt for Good
             </Typography>
             <Typography
-              sx={{ mt: 0.35, color: "#61716d", fontSize: 12, fontWeight: 550 }}
+              sx={{ mt: 0.35, color: "text.secondary", fontSize: 12, fontWeight: 550 }}
             >
               PFG Hub
             </Typography>
@@ -91,7 +96,7 @@ export function LoginPage() {
         <Box sx={{ py: { xs: 1.5, md: 6 }, maxWidth: 480 }}>
           <Typography
             sx={{
-              color: "#bf542d",
+              color: "secondary.main",
               fontSize: 12,
               fontWeight: 750,
               textTransform: "uppercase",
@@ -107,7 +112,7 @@ export function LoginPage() {
               mt: 2,
               mb: 0,
               maxWidth: 440,
-              color: "#17211f",
+              color: "text.primary",
               fontSize: { md: 42, lg: 52 },
               fontWeight: 720,
               lineHeight: 1.08,
@@ -120,7 +125,7 @@ export function LoginPage() {
         <Typography
           sx={{
             display: { xs: "none", md: "block" },
-            color: "#71807c",
+            color: "text.secondary",
             fontSize: 12,
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
           }}
@@ -132,6 +137,7 @@ export function LoginPage() {
       <Box
         component="main"
         sx={{
+          position: "relative",
           display: "flex",
           alignItems: { xs: "flex-start", md: "center" },
           justifyContent: "center",
@@ -140,13 +146,24 @@ export function LoginPage() {
         }}
       >
         <Box
+          sx={{
+            position: "absolute",
+            top: { xs: 12, sm: 20 },
+            right: { xs: 16, sm: 24 },
+            color: "text.secondary",
+          }}
+        >
+          <ThemeModeButton />
+        </Box>
+
+        <Box
           component="form"
           onSubmit={handleSubmit}
           sx={{ width: "100%", maxWidth: 390 }}
         >
           <Typography
             sx={{
-              color: "#147565",
+              color: "primary.main",
               fontSize: 12,
               fontWeight: 750,
               textTransform: "uppercase",
@@ -160,7 +177,7 @@ export function LoginPage() {
             sx={{
               mt: 1.25,
               mb: 1,
-              color: "#17211f",
+              color: "text.primary",
               fontSize: { xs: 30, md: 34 },
               fontWeight: 720,
               lineHeight: 1.2,
@@ -168,7 +185,7 @@ export function LoginPage() {
           >
             Sign in
           </Typography>
-          <Typography sx={{ mb: 4, color: "#6c7976", fontSize: 14 }}>
+          <Typography sx={{ mb: 4, color: "text.secondary", fontSize: 14 }}>
             Enter the admin key configured on the PFG Hub.
           </Typography>
 
@@ -225,6 +242,27 @@ export function LoginPage() {
           >
             Sign in
           </Button>
+
+          <Button
+            href="/dashboard"
+            variant="outlined"
+            size="large"
+            startIcon={<PublicOutlinedIcon />}
+            fullWidth
+            sx={{ mt: 1.5, minHeight: 48 }}
+          >
+            View public dashboard
+          </Button>
+          <Typography
+            sx={{
+              mt: 1.25,
+              color: "text.secondary",
+              fontSize: 12,
+              textAlign: "center",
+            }}
+          >
+            No admin key required.
+          </Typography>
         </Box>
       </Box>
     </Box>

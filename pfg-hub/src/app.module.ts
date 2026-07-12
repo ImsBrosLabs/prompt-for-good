@@ -6,6 +6,7 @@ import { DatabaseModule } from "./db/database.module";
 import { GitHubModule } from "./github/github.module";
 import { HealthController } from "./health/health.controller";
 import { IssuesModule } from "./issues/issues.module";
+import { PublicModule } from "./public/public.module";
 import { RuntimeConfigModule } from "./runtime-config/runtime-config.module";
 import { RunnersModule } from "./runners/runners.module";
 import { ScoringModule } from "./scoring/scoring.module";
@@ -23,6 +24,7 @@ import { StatsModule } from "./stats/stats.module";
     RunnersModule,
     IssuesModule,
     StatsModule,
+    PublicModule,
     GitHubModule,
     SeedModule,
   ],
