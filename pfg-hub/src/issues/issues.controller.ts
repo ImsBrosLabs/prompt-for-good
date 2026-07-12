@@ -24,6 +24,10 @@ import {
 } from "@nestjs/swagger";
 import { getHeader, RequestWithHeaders } from "../auth/request-headers";
 import { DoneRequestDto, IssueDto } from "../openapi/dtos";
+import {
+  doneRequestSchema,
+  ZodValidationPipe,
+} from "../validation/request-validation";
 import { IssuesService } from "./issues.service";
 
 type HttpResponse = { status: (statusCode: number) => unknown };
@@ -105,7 +109,7 @@ export class IssuesController {
   async reportDone(
     @Param("id") id: string,
     @Req() request: RequestWithHeaders,
-    @Body() body: DoneRequestDto,
+    @Body(new ZodValidationPipe(doneRequestSchema)) body: DoneRequestDto,
   ): Promise<void> {
     const runnerToken = getHeader(request, "x-runner-token");
     await this.issuesService.reportDone(id, runnerToken, body);

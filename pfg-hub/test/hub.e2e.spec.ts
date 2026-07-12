@@ -497,6 +497,35 @@ describeDb("hub e2e", () => {
     expect(updated.active).toBe(true);
   });
 
+  it("rejects invalid heartbeat request bodies before updating quota", async () => {
+    const runner = await registerRunner();
+
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .set("X-Runner-Token", runner.token)
+      .send({ quotaRemainingToday: -1 })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .set("X-Runner-Token", runner.token)
+      .send({ quotaRemainingToday: "250" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/runners/${runner.runnerId}/heartbeat`)
+      .set("X-Runner-Token", runner.token)
+      .send({ quotaRemainingToday: 250, extra: true })
+      .expect(400);
+
+    const [unchanged] = await db
+      .select()
+      .from(runners)
+      .where(eq(runners.id, runner.runnerId))
+      .limit(1);
+    expect(unchanged.quotaRemainingToday).toBe(500);
+  });
+
   it("rejects runner heartbeats with missing, invalid or unknown runner credentials", async () => {
     const runner = await registerRunner();
 
@@ -827,6 +856,53 @@ describeDb("hub e2e", () => {
       tokensUsed: 123,
       errorMessage: null,
     });
+  });
+
+  it("rejects invalid completion request bodies before recording contributions", async () => {
+    const runner = await registerRunner();
+    await seedRepo();
+    await seedIssue({
+      id: "invalid-completion",
+      githubId: 42,
+      status: "CLAIMED",
+      claimedBy: runner.runnerId,
+      claimedAt: new Date(),
+    });
+
+    await request(app.getHttpServer())
+      .post("/issues/invalid-completion/done")
+      .set("X-Runner-Token", runner.token)
+      .send({ success: true })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post("/issues/invalid-completion/done")
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: true,
+        prUrl: "https://github.com/owner/repo/issues/7",
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post("/issues/invalid-completion/done")
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: false,
+        tokensUsed: -1,
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post("/issues/invalid-completion/done")
+      .set("X-Runner-Token", runner.token)
+      .send({
+        success: false,
+        prUrl: "https://github.com/owner/repo/issues/7",
+      })
+      .expect(400);
+
+    expect(await countRows("contributions")).toBe(0);
   });
 
   it("returns a failed issue to pending while retry budget remains", async () => {

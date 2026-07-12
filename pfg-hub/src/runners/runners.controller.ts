@@ -26,6 +26,11 @@ import {
   RegisterRequestDto,
   RegisterResponseDto,
 } from "../openapi/dtos";
+import {
+  heartbeatRequestSchema,
+  registerRequestSchema,
+  ZodValidationPipe,
+} from "../validation/request-validation";
 import { RunnersService } from "./runners.service";
 
 @Controller("runners")
@@ -53,7 +58,8 @@ export class RunnersController {
   })
   /** Handles runner registration and returns credentials for future calls. */
   async registerRunner(
-    @Body() request: RegisterRequestDto,
+    @Body(new ZodValidationPipe(registerRequestSchema))
+    request: RegisterRequestDto,
   ): Promise<RegisterResponseDto> {
     const runner = await this.runnersService.register(
       request.contributorName,
@@ -79,7 +85,8 @@ export class RunnersController {
   async heartbeat(
     @Param("id") id: string,
     @Req() request: RequestWithHeaders,
-    @Body() body: HeartbeatRequestDto,
+    @Body(new ZodValidationPipe(heartbeatRequestSchema))
+    body: HeartbeatRequestDto,
   ): Promise<void> {
     const runnerToken = getHeader(request, "x-runner-token");
     await this.runnersService.heartbeat(
