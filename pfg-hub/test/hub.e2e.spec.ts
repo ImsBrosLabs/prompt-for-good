@@ -1000,7 +1000,10 @@ describeDb("hub e2e", () => {
     await request(app.getHttpServer())
       .post("/issues/claimed-by-owner/done")
       .set("X-Runner-Token", intruder.token)
-      .send({ success: true })
+      .send({
+        success: true,
+        prUrl: "https://github.com/owner/repo/pull/7",
+      })
       .expect(401);
 
     const [issue] = await db
