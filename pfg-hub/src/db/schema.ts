@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -105,6 +106,9 @@ export const issues = pgTable(
   (table) => ({
     statusIdx: index("idx_issues_status").on(table.status),
     scoreIdx: index("idx_issues_score").on(table.score),
+    githubIdUniqueIdx: uniqueIndex("idx_issues_github_id_unique").on(
+      table.githubId,
+    ),
   }),
 );
 

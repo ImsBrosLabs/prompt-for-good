@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { DATABASE, Database } from "../db/database.module";
 import {
@@ -35,6 +35,7 @@ export class RunnersService {
         token: randomUUID(),
         contributorName: contributorName.trim(),
         active: true,
+        lastSeenAt: new Date(),
         preferences: this.normalizePreferences(preferences),
       })
       .returning();
@@ -85,6 +86,20 @@ export class RunnersService {
     return runner;
   }
 
+  /** Marks active runners stale when they have no fresh heartbeat evidence. */
+  async expireInactiveRunners(cutoff: Date): Promise<void> {
+    await this.db
+      .update(runners)
+      .set({ active: false })
+      .where(
+        and(
+          eq(runners.active, true),
+          or(isNull(runners.lastSeenAt), lt(runners.lastSeenAt, cutoff)),
+        ),
+      );
+  }
+
+  /** Canonicalizes user-owned dispatch policy before storing it on the runner. */
   private normalizePreferences(
     preferences: RunnerPreferences | undefined,
   ): RunnerPreferences {
@@ -106,6 +121,7 @@ export class RunnersService {
     };
   }
 
+  /** Stores list preferences as lowercase unique terms for deterministic matching. */
   private normalizeList(values: string[] | undefined): string[] {
     if (!Array.isArray(values)) return [];
     return [
@@ -115,6 +131,7 @@ export class RunnersService {
     ];
   }
 
+  /** Accepts only known difficulty tiers so invalid preference input falls back to no cap. */
   private normalizeDifficulty(
     value: IssueDifficulty | undefined,
   ): IssueDifficulty | undefined {

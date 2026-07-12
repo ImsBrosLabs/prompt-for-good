@@ -71,8 +71,16 @@ class HubClient:
         resp.raise_for_status()
         log.info("reported to hub", issue_id=issue_id, success=success)
 
-    def heartbeat(self, runner_id: str, quota_remaining: int) -> None:
+    def heartbeat(
+        self,
+        runner_id: str,
+        quota_remaining: int,
+        preferences: dict[str, object] | None = None,
+    ) -> None:
+        """Record runner liveness and optionally replace hub-stored dispatch preferences."""
         payload = {"quotaRemainingToday": quota_remaining}
+        if preferences is not None:
+            payload["preferences"] = preferences
         resp = self._request("POST", f"/runners/{runner_id}/heartbeat", json=payload)
         resp.raise_for_status()
 

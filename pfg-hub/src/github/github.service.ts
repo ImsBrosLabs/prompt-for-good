@@ -678,23 +678,28 @@ export class GitHubService
       const assessment = this.scoringService.assessIssue(candidate);
 
       if (assessment.score >= issueMinScore) {
-        await this.db.insert(issues).values({
-          id: randomUUID(),
-          repoId: repo.id,
-          githubId: item.id,
-          title: item.title,
-          body: item.body ?? null,
-          githubUrl: item.html_url,
-          labels,
-          score: assessment.score,
-          scoreDiagnostic: assessment.diagnostic,
-          difficulty: assessment.difficulty,
-          estimatedMinutes: assessment.estimatedMinutes,
-          status: "PENDING",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        result.createdIssues += 1;
+        try {
+          await this.db.insert(issues).values({
+            id: randomUUID(),
+            repoId: repo.id,
+            githubId: item.id,
+            title: item.title,
+            body: item.body ?? null,
+            githubUrl: item.html_url,
+            labels,
+            score: assessment.score,
+            scoreDiagnostic: assessment.diagnostic,
+            difficulty: assessment.difficulty,
+            estimatedMinutes: assessment.estimatedMinutes,
+            status: "PENDING",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+          result.createdIssues += 1;
+        } catch (error) {
+          if (!this.isUniqueViolation(error)) throw error;
+          result.skippedExistingIssues += 1;
+        }
       } else {
         result.skippedLowScoreIssues += 1;
         this.recordRejectedIssueDiagnostic(result, item, assessment);
@@ -710,6 +715,16 @@ export class GitHubService
       `Crawled GitHub issues for ${repo.owner}/${repo.name} fetchedIssues=${result.fetchedIssues} createdIssues=${result.createdIssues} skippedPullRequests=${result.skippedPullRequests} skippedExistingIssues=${result.skippedExistingIssues} skippedLowScoreIssues=${result.skippedLowScoreIssues}`,
     );
     return result;
+  }
+
+  /** Recognizes database uniqueness races so concurrent crawls remain idempotent. */
+  private isUniqueViolation(error: unknown): boolean {
+    return (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "23505"
+    );
   }
 
   /** Keeps a small rejected-issue sample for calibration without storing full issue bodies. */

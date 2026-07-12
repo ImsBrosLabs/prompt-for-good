@@ -199,39 +199,22 @@ latency, and the admin scoring screen exposes queue health. Keep in-memory
 preference-aware dispatch until pending issues exceed 1000 or recent p95
 matching latency reaches 100 ms durably; then move ranking into the database.
 
-1. **Queue robustness**
-   - Reclaim or fail stale `CLAIMED` issues after a timeout.
-   - Account for runner quota when dispatching work.
-   - Mark runners inactive when heartbeat freshness expires.
-   - Prevent duplicate GitHub issues across recrawls and repository records.
-
-2. **Runner project preferences**
-   - Let runners declare project selection criteria instead of receiving any
-     globally eligible issue.
-   - Support preferences such as allowed/blocked repositories, languages,
-     ecosystems, licenses, issue labels, difficulty tiers and maximum estimated
-     runtime.
-   - Persist runner preferences in the hub and include them in issue dispatch
-     matching.
-   - Expose the same preferences in the runner configuration file so
-     contributors can control which projects their local quota may work on.
-
-3. **Runtime API validation**
+1. **Runtime API validation**
    - Add structured request validation for DTOs.
    - Validate PR URLs, non-negative token counts, non-negative quota values and
      required completion fields.
 
-4. **Production security**
+2. **Production security**
    - Replace static admin-token authentication with scoped bearer auth such as
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-5. **Dashboard and missing API surface**
+3. **Dashboard and missing API surface**
    - Build the public hub dashboard for repositories, issues, pull requests,
      contributors, runners and token usage.
    - Add the documented `GET /repos` endpoint.
 
-6. **Operations and deployment**
+4. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.

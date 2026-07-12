@@ -44,6 +44,19 @@ export function IssuesList() {
         <NumberField source="score" />
         <NumberField source="estimatedMinutes" label="Estimate (min)" />
         <NumberField source="retryCount" />
+        <TextField
+          source="claimedBy"
+          label="Claimed by"
+          emptyText="-"
+          sortable={false}
+        />
+        <DateField
+          source="claimedAt"
+          label="Claimed at"
+          showTime
+          emptyText="-"
+          sortable={false}
+        />
         <UrlField source="githubUrl" label="GitHub" />
         <DateField source="updatedAt" showTime />
       </Datagrid>

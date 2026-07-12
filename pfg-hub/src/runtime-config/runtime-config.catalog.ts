@@ -2,11 +2,7 @@ import { validateCronExpression } from "cron";
 import { z } from "zod";
 
 export type RuntimeConfigCategory =
-  | "Hub"
-  | "Security"
-  | "Issues"
-  | "GitHub ingestion"
-  | "GitHub API";
+  "Hub" | "Security" | "Issues" | "GitHub ingestion" | "GitHub API";
 
 export type RuntimeConfigValueSource = "database" | "environment" | "default";
 
@@ -154,6 +150,42 @@ export const RUNTIME_CONFIG_CATALOG = defineCatalog([
     label: "Maximum issue retries",
     description:
       "Allowed failure count before marking an issue as permanently failed.",
+    category: "Issues",
+    secret: false,
+    valueType: "integer",
+  },
+  {
+    key: "issueClaimTimeoutMs",
+    env: "ISSUE_CLAIM_TIMEOUT_MS",
+    defaultValue: 2 * 60 * 60 * 1000,
+    schema: integerSchema(5 * 60 * 1000),
+    label: "Issue claim timeout",
+    description:
+      "Maximum time a runner may keep an issue claimed before the hub treats it as timed out.",
+    category: "Issues",
+    secret: false,
+    valueType: "integer",
+  },
+  {
+    key: "runnerHeartbeatTimeoutMs",
+    env: "RUNNER_HEARTBEAT_TIMEOUT_MS",
+    defaultValue: 30 * 60 * 1000,
+    schema: integerSchema(60_000),
+    label: "Runner heartbeat timeout",
+    description:
+      "Maximum heartbeat age before an active runner is marked inactive.",
+    category: "Issues",
+    secret: false,
+    valueType: "integer",
+  },
+  {
+    key: "queueMaintenanceBatchSize",
+    env: "QUEUE_MAINTENANCE_BATCH_SIZE",
+    defaultValue: 100,
+    schema: integerSchema(1, 1000),
+    label: "Queue maintenance batch size",
+    description:
+      "Maximum number of stale claimed issues reclaimed during one dispatch poll.",
     category: "Issues",
     secret: false,
     valueType: "integer",

@@ -55,7 +55,11 @@ class AgentPipeline:
             # Heartbeat: signal runner is alive and report remaining quota
             quota_remaining = max(0, settings.max_tokens_per_day - self.tokens_used_today)
             try:
-                self.hub.heartbeat(settings.runner_id, quota_remaining)
+                self.hub.heartbeat(
+                    settings.runner_id,
+                    quota_remaining,
+                    settings.project_preferences.to_hub_preferences(),
+                )
             except Exception as exc:
                 log.warning("heartbeat failed, continuing", error=str(exc))
 

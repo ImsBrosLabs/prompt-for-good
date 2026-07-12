@@ -89,6 +89,7 @@ describe("RunnersService", () => {
       expect.objectContaining({
         contributorName: "octocat",
         active: true,
+        lastSeenAt: expect.any(Date),
       }),
     );
   });
@@ -145,6 +146,16 @@ describe("RunnersService", () => {
         active: true,
       }),
     );
+    expect(updateWhere).toHaveBeenCalledOnce();
+  });
+
+  it("expires active runners without a fresh heartbeat", async () => {
+    const { db, set, updateWhere } = createRunnerDb([runner]);
+    const service = new RunnersService(db);
+
+    await service.expireInactiveRunners(new Date("2026-01-01T00:30:00Z"));
+
+    expect(set).toHaveBeenCalledWith({ active: false });
     expect(updateWhere).toHaveBeenCalledOnce();
   });
 });
