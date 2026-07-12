@@ -14,6 +14,7 @@ def report_done(
     pr_url: str | None,
     tokens_used: int,
     error_message: str | None,
+    details: dict[str, object] | None = None,
 ) -> None:
     """Notify pfg-hub that processing is complete (success or failure)."""
     hub.report_done(
@@ -22,6 +23,7 @@ def report_done(
         pr_url=pr_url,
         tokens_used=tokens_used,
         error_message=error_message,
+        details=details,
     )
     log.info(
         "reported to hub",

@@ -231,6 +231,7 @@ describe("IssuesService", () => {
         runnerId: "runner-1",
         status: "FAILED",
         errorMessage: "Claim timed out",
+        details: { reason: "claim_timeout" },
       }),
     );
   });
@@ -346,6 +347,9 @@ describe("IssuesService", () => {
       success: true,
       prUrl: "https://github.com/owner/repo/pull/7",
       tokensUsed: 123,
+      details: {
+        verification: { status: "skipped", missingBuildSystem: true },
+      },
     });
 
     expect(txUpdate.set).toHaveBeenCalledWith(
@@ -363,6 +367,9 @@ describe("IssuesService", () => {
         status: "SUCCESS",
         tokensUsed: 123,
         errorMessage: null,
+        details: {
+          verification: { status: "skipped", missingBuildSystem: true },
+        },
       }),
     );
   });
@@ -397,6 +404,7 @@ describe("IssuesService", () => {
         prUrl: null,
         tokensUsed: null,
         errorMessage: "tests failed",
+        details: {},
       }),
     );
   });

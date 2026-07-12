@@ -925,6 +925,9 @@ describeDb("hub e2e", () => {
         success: true,
         prUrl: "https://github.com/owner/repo/pull/7",
         tokensUsed: 123,
+        details: {
+          verification: { status: "skipped", missingBuildSystem: true },
+        },
       })
       .expect(204);
 
@@ -944,6 +947,9 @@ describeDb("hub e2e", () => {
       status: "SUCCESS",
       tokensUsed: 123,
       errorMessage: null,
+      details: {
+        verification: { status: "skipped", missingBuildSystem: true },
+      },
     });
   });
 
@@ -1013,6 +1019,12 @@ describeDb("hub e2e", () => {
         success: false,
         tokensUsed: 456,
         errorMessage: "Tests failed",
+        details: {
+          verification: {
+            status: "failed",
+            command: ["npm", "test", "--silent"],
+          },
+        },
       })
       .expect(204);
 
@@ -1033,6 +1045,12 @@ describeDb("hub e2e", () => {
       status: "FAILED",
       tokensUsed: 456,
       errorMessage: "Tests failed",
+      details: {
+        verification: {
+          status: "failed",
+          command: ["npm", "test", "--silent"],
+        },
+      },
     });
   });
 

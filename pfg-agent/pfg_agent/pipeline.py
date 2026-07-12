@@ -10,7 +10,7 @@ from pfg_agent.phases.context import gather_context
 from pfg_agent.phases.pr import open_pull_request
 from pfg_agent.phases.report import report_done
 from pfg_agent.phases.solve import generate_patch
-from pfg_agent.phases.verify import verify_patch
+from pfg_agent.phases.verify import get_current_head, reset_worktree, verify_patch
 
 log = structlog.get_logger()
 
@@ -69,6 +69,10 @@ class AgentPipeline:
         pr_url = None
         tokens_used = 0
         error_message = None
+        attempts: list[dict[str, object]] = []
+        details: dict[str, object] = {"attempts": attempts}
+        context = None
+        base_revision = None
 
         try:
             # Phase 2: Analyze
@@ -77,6 +81,9 @@ class AgentPipeline:
 
             # Phase 3: Context
             context = gather_context(issue, analysis)
+            base_revision = get_current_head(context.repo_path)
+            details["baseRevision"] = base_revision
+            reset_worktree(context.repo_path, base_revision)
 
             # Phase 4: Solve
             patch = generate_patch(issue, context)
@@ -86,22 +93,46 @@ class AgentPipeline:
             for attempt in range(1, settings.max_retries + 1):
                 log.info("verifying patch", attempt=attempt)
                 verified = verify_patch(context, patch)
+                attempt_details = {
+                    "attempt": attempt,
+                    "patchTokensUsed": patch.tokens_used,
+                    **(verified.details or {}),
+                }
+                attempts.append(attempt_details)
+                if verified.details:
+                    details["verification"] = verified.details.get("verification")
                 if verified.success:
                     break
                 log.warning("patch verification failed", attempt=attempt, error=verified.error)
                 if attempt < settings.max_retries:
+                    reset_worktree(context.repo_path, base_revision)
                     patch = generate_patch(issue, context, previous_error=verified.error)
                     tokens_used += patch.tokens_used
             else:
+                reset_worktree(context.repo_path, base_revision)
                 raise RuntimeError(f"patch failed after {settings.max_retries} attempts")
 
             # Phase 6: PR
-            pr_url = open_pull_request(issue, patch)
+            pr_result = open_pull_request(issue, patch)
+            pr_url = pr_result.url
+            details["pullRequest"] = pr_result.details
             log.info("PR opened", pr_url=pr_url)
 
         except Exception as exc:
             log.error("issue processing failed", issue_id=issue.id, error=str(exc))
             error_message = str(exc)
+            exception_details = getattr(exc, "details", None)
+            if isinstance(exception_details, dict):
+                details.update(exception_details)
+            details["error"] = {"message": error_message}
+            if context is not None and base_revision is not None and pr_url is None:
+                try:
+                    reset_worktree(context.repo_path, base_revision)
+                except Exception as reset_exc:
+                    details["cleanup"] = {
+                        "status": "failed",
+                        "error": str(reset_exc),
+                    }
 
         finally:
             # Phase 7: Report
@@ -112,6 +143,7 @@ class AgentPipeline:
                 pr_url=pr_url,
                 tokens_used=tokens_used,
                 error_message=error_message,
+                details=details,
             )
 
         return tokens_used

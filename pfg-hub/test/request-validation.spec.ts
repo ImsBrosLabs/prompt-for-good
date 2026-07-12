@@ -74,12 +74,28 @@ describe("request validation", () => {
         success: false,
         tokensUsed: null,
         errorMessage: "Tests failed",
+        details: {
+          verification: {
+            status: "failed",
+            command: ["npm", "test", "--silent"],
+            timedOut: false,
+          },
+        },
       }).success,
     ).toBe(true);
     expect(
       doneRequestSchema.safeParse({
         success: false,
         tokensUsed: -1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects non-json completion details", () => {
+    expect(
+      doneRequestSchema.safeParse({
+        success: false,
+        details: { invalid: undefined },
       }).success,
     ).toBe(false);
   });

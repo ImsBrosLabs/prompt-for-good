@@ -135,6 +135,15 @@ export class DoneRequestDto {
     type: String,
   })
   errorMessage?: string | null;
+
+  @ApiPropertyOptional({
+    additionalProperties: true,
+    description:
+      "Structured runner report with phase outcomes, verification logs and pull request diagnostics",
+    nullable: true,
+    type: Object,
+  })
+  details?: Record<string, unknown> | null;
 }
 
 export class IssueDto {

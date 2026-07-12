@@ -38,6 +38,7 @@ export const doneRequestSchema = z
     prUrl: z.string().regex(githubPullRequestUrlPattern).nullable().optional(),
     tokensUsed: z.number().int().nonnegative().nullable().optional(),
     errorMessage: z.string().nullable().optional(),
+    details: z.record(z.string(), z.json()).nullable().optional(),
   })
   .strict()
   .superRefine((request, context) => {
