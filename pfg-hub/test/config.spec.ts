@@ -46,6 +46,18 @@ describe("loadConfig", () => {
     });
   });
 
+  it("reads the optional public base URL from the environment", () => {
+    process.env.PUBLIC_BASE_URL = " https://hub.example.test ";
+
+    expect(loadConfig().publicBaseUrl).toBe("https://hub.example.test");
+  });
+
+  it("ignores a blank public base URL", () => {
+    process.env.PUBLIC_BASE_URL = "   ";
+
+    expect(loadConfig().publicBaseUrl).toBeUndefined();
+  });
+
   it("parses a comma-separated CORS origin allowlist", () => {
     process.env.CORS_ORIGINS =
       " https://admin.example.com, http://localhost:5173 ";

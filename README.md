@@ -202,6 +202,10 @@ Then open:
 https://hub.pfg.local:8080/docs
 ```
 
+Swagger UI uses the same origin as `/docs` by default, so local HTTPS requests
+stay on `https://hub.pfg.local:8080`. Set `PUBLIC_BASE_URL` only when the hub is
+served behind a different public origin.
+
 If HTTPS is disabled or either certificate file is missing, the hub starts in
 HTTP mode as before.
 
@@ -379,6 +383,7 @@ Hub variables:
 | `HTTPS_ENABLED` | `false` | Enable local HTTPS when certificates exist |
 | `HTTPS_CERT_PATH` | `./certs/hub.pfg.local.pem` | Local mkcert certificate path |
 | `HTTPS_KEY_PATH` | `./certs/hub.pfg.local-key.pem` | Local mkcert private key path |
+| `PUBLIC_BASE_URL` | unset | Optional absolute public hub URL advertised in OpenAPI docs |
 | `DATABASE_URL` | local postgres URL | Hub PostgreSQL connection string |
 | `ADMIN_KEY` | empty | Admin token required by `/admin/**` and `/seed/**` |
 | `GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |
