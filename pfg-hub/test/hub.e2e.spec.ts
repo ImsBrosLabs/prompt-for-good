@@ -133,6 +133,8 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/issues/{id}/claim"]).toBeDefined();
     expect(response.body.paths["/issues/{id}/done"]).toBeDefined();
     expect(response.body.paths["/stats"]).toBeDefined();
+    expect(response.body.paths["/repos"]).toBeDefined();
+    expect(response.body.paths["/token-usage"]).toBeDefined();
     expect(response.body.paths["/admin/session"]).toBeDefined();
     expect(response.body.paths["/admin/repositories"]).toBeDefined();
     expect(response.body.paths["/admin/issues"]).toBeDefined();
@@ -199,6 +201,93 @@ describeDb("hub e2e", () => {
     expect(response.body.paths["/seed/ingestion-runs"].get.security).toEqual([
       { AdminToken: [] },
     ]);
+    expect(response.body.paths["/repos"].get.security).toBeUndefined();
+    expect(response.body.paths["/token-usage"].get.security).toBeUndefined();
+  });
+
+  it("serves public repositories with filters and aggregate token usage", async () => {
+    const runner = await registerRunner("public-runner");
+    await seedRepo({
+      id: "repo-low",
+      githubUrl: "https://github.com/acme/legacy",
+      owner: "acme",
+      name: "legacy",
+      language: "JavaScript",
+      score: 20,
+      stars: 10,
+      eligible: false,
+    });
+    await seedRepo({
+      id: "repo-1",
+      githubUrl: "https://github.com/acme/project",
+      owner: "acme",
+      name: "project",
+      language: "TypeScript",
+      ecosystems: ["node"],
+      license: "MIT",
+      ciDetected: true,
+      testsDetected: true,
+      score: 95,
+      stars: 100,
+      eligible: true,
+    });
+    await seedIssue({ id: "done", githubId: 42, status: "DONE" });
+    await seedIssue({ id: "failed", githubId: 43, status: "FAILED" });
+    await db.insert(contributions).values([
+      {
+        id: "contribution-1",
+        issueId: "done",
+        runnerId: runner.runnerId,
+        prUrl: "https://github.com/acme/project/pull/1",
+        status: "SUCCESS",
+        tokensUsed: 250,
+      },
+      {
+        id: "contribution-2",
+        issueId: "failed",
+        runnerId: runner.runnerId,
+        status: "FAILED",
+        tokensUsed: 50,
+      },
+    ]);
+
+    const repositoriesResponse = await request(app.getHttpServer())
+      .get("/repos")
+      .query({ limit: 1, offset: 0, q: "acme", eligible: true })
+      .expect(200);
+
+    expect(repositoriesResponse.body).toMatchObject({
+      total: 1,
+      data: [
+        {
+          id: "repo-1",
+          githubUrl: "https://github.com/acme/project",
+          owner: "acme",
+          name: "project",
+          language: "TypeScript",
+          ecosystems: ["node"],
+          license: "MIT",
+          ciDetected: true,
+          testsDetected: true,
+          score: 95,
+          stars: 100,
+          eligible: true,
+        },
+      ],
+    });
+    expect(repositoriesResponse.body.data[0]).not.toHaveProperty(
+      "scoreDiagnostic",
+    );
+
+    const tokenUsageResponse = await request(app.getHttpServer())
+      .get("/token-usage")
+      .expect(200);
+
+    expect(tokenUsageResponse.body).toEqual({
+      totalTokensUsed: 300,
+      successfulContributions: 1,
+      failedContributions: 1,
+    });
   });
 
   it("serves authenticated React-admin lists with filters and safe runner fields", async () => {
@@ -1608,6 +1697,12 @@ describeDb("hub e2e", () => {
       githubUrl?: string;
       owner?: string;
       name?: string;
+      language?: string | null;
+      ecosystems?: string[];
+      license?: string | null;
+      ciDetected?: boolean;
+      testsDetected?: boolean;
+      score?: number;
       stars?: number;
       eligible?: boolean;
     } = {},
@@ -1617,6 +1712,12 @@ describeDb("hub e2e", () => {
       githubUrl: values.githubUrl ?? "https://github.com/owner/repo",
       owner: values.owner ?? "owner",
       name: values.name ?? "repo",
+      language: values.language,
+      ecosystems: values.ecosystems ?? [],
+      license: values.license,
+      ciDetected: values.ciDetected ?? false,
+      testsDetected: values.testsDetected ?? false,
+      score: values.score ?? 0,
       stars: values.stars ?? 100,
       eligible: values.eligible ?? true,
     });

@@ -314,6 +314,84 @@ export class StatsResponseDto {
   p95DispatchMatchingLatencyMs?: number | null;
 }
 
+export class PublicRepoDto {
+  @ApiProperty({ description: "Internal repository UUID", type: String })
+  id!: string;
+
+  @ApiProperty({
+    description: "GitHub URL of the repository",
+    example: "https://github.com/owner/repo",
+    type: String,
+  })
+  githubUrl!: string;
+
+  @ApiProperty({ example: "owner", type: String })
+  owner!: string;
+
+  @ApiProperty({ example: "repo", type: String })
+  name!: string;
+
+  @ApiPropertyOptional({ example: "TypeScript", nullable: true, type: String })
+  language!: string | null;
+
+  @ApiProperty({ example: ["node"], isArray: true, type: String })
+  ecosystems!: string[];
+
+  @ApiPropertyOptional({ example: "MIT", nullable: true, type: String })
+  license!: string | null;
+
+  @ApiProperty({ type: Boolean })
+  ciDetected!: boolean;
+
+  @ApiProperty({ type: Boolean })
+  testsDetected!: boolean;
+
+  @ApiPropertyOptional({
+    format: "date-time",
+    nullable: true,
+    type: String,
+  })
+  lastPushedAt!: Date | null;
+
+  @ApiProperty({ example: 82, format: "int32", type: Number })
+  score!: number;
+
+  @ApiProperty({ example: 1200, format: "int32", type: Number })
+  stars!: number;
+
+  @ApiProperty({ type: Boolean })
+  eligible!: boolean;
+
+  @ApiPropertyOptional({
+    format: "date-time",
+    nullable: true,
+    type: String,
+  })
+  lastCrawledAt!: Date | null;
+
+  @ApiProperty({ format: "date-time", type: String })
+  createdAt!: Date;
+}
+
+export class PublicRepoListResponseDto {
+  @ApiProperty({ type: [PublicRepoDto] })
+  data!: PublicRepoDto[];
+
+  @ApiProperty({ example: 42, format: "int32", type: Number })
+  total!: number;
+}
+
+export class TokenUsageResponseDto {
+  @ApiProperty({ example: 125000, format: "int64", type: Number })
+  totalTokensUsed!: number;
+
+  @ApiProperty({ example: 24, format: "int32", type: Number })
+  successfulContributions!: number;
+
+  @ApiProperty({ example: 3, format: "int32", type: Number })
+  failedContributions!: number;
+}
+
 export class IngestionRunDto {
   @ApiPropertyOptional({ description: "Ingestion run UUID", type: String })
   id?: string;

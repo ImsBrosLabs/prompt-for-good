@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 // Guards the public entry point against the render loop that previously blanked it.
 test("renders the login screen without a React update loop", async ({
@@ -15,8 +15,71 @@ test("renders the login screen without a React update loop", async ({
 
   await expect(page).toHaveURL(/#\/login$/);
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View public dashboard" })).toBeVisible();
+  await expect(
+    page.locator(".MuiOutlinedInput-root").filter({
+      has: page.getByRole("textbox", { name: "Admin key" }),
+    }),
+  ).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden");
   expect(renderLoopErrors).toEqual([]);
+});
+
+test("opens the public dashboard from login without authenticating", async ({
+  page,
+}) => {
+  await routePublicDashboard(page);
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "View public dashboard" }).click();
+
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(
+    page.getByRole("heading", { name: "Public hub dashboard" }),
+  ).toBeVisible();
+});
+
+test("keeps the public dashboard usable when public repositories are unavailable", async ({
+  page,
+}) => {
+  await routePublicDashboard(page, { repositoriesStatus: 404 });
+
+  await page.goto("/");
+  await page.getByRole("link", { name: "View public dashboard" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Public hub dashboard" }),
+  ).toBeVisible();
+  await expect(page.getByText("No repositories found.")).toBeVisible();
+  await expect(page.getByText(/failed with status 404/)).toHaveCount(0);
+});
+
+test("persists theme changes made before signing in", async ({ page }) => {
+  await page.route("**/admin/**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [], total: 0 }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle light/dark mode" }).click();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("RaStore.theme")))
+    .toBe('"dark"');
+  await expect(page.locator("#root > div").first()).toHaveCSS(
+    "background-color",
+    "rgb(16, 22, 21)",
+  );
+
+  await page.getByRole("textbox", { name: "Admin key" }).fill("password");
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  await expect(page).toHaveURL(/#\/repositories/);
+  await expect(page.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(16, 22, 21)",
+  );
 });
 
 // Exercises placeholder authentication and the first protected resource end to end.
@@ -179,10 +242,10 @@ test("edits and resets grouped runtime configuration", async ({ page }) => {
   await expect(page).toHaveURL(/#\/repositories/);
 
   await page.goto("/#/configuration");
-  await expect(
-    page.getByRole("heading", { name: "Configuration" }),
-  ).toBeVisible();
   const mainContent = page.locator("#main-content");
+  await expect(
+    mainContent.getByRole("heading", { name: "Configuration" }),
+  ).toBeVisible();
   await expect(mainContent.getByText("Issues", { exact: true })).toBeVisible();
   await expect(
     mainContent.getByText("GitHub ingestion", { exact: true }),
@@ -253,4 +316,48 @@ function runtimeConfigRecord(input: {
       defaultValue: input.defaultValue ?? input.value,
     },
   };
+}
+
+/** Fulfills public dashboard requests so navigation can be tested without a hub process. */
+async function routePublicDashboard(
+  page: Page,
+  options: { repositoriesStatus?: number } = {},
+) {
+  await page.route(/\/stats(?:\?|$)/, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        totalRepos: 0,
+        eligibleRepos: 0,
+        queueSize: 0,
+        totalPrsOpened: 0,
+        activeRunners: 0,
+      }),
+    });
+  });
+  await page.route(/\/repos(?:\?|$)/, async (route) => {
+    if (options.repositoriesStatus) {
+      await route.fulfill({
+        status: options.repositoriesStatus,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Not Found" }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ data: [], total: 0 }),
+    });
+  });
+  await page.route(/\/token-usage(?:\?|$)/, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        totalTokensUsed: 0,
+        successfulContributions: 0,
+        failedContributions: 0,
+      }),
+    });
+  });
 }

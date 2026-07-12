@@ -10,6 +10,8 @@ import { dataProvider } from "./dataProvider";
 import { AdminLayout } from "./layout/AdminLayout";
 import { LoginPage } from "./LoginPage";
 import { OperationsPage } from "./operations/OperationsPage";
+import { PublicThemeScope } from "./PublicThemeScope";
+import { PublicDashboard } from "./public/PublicDashboard";
 import { ContributionsList } from "./resources/contributions";
 import { ConfigurationList } from "./resources/configuration";
 import { IssuesList } from "./resources/issues";
@@ -18,6 +20,14 @@ import { RunnersList } from "./resources/runners";
 import { ScoringPage } from "./scoring/ScoringPage";
 import { adminDarkTheme, adminLightTheme } from "./theme";
 export default function App() {
+  if (isDirectPublicDashboardLocation()) {
+    return (
+      <PublicThemeScope>
+        <PublicDashboard />
+      </PublicThemeScope>
+    );
+  }
+
   return (
     <Admin
       title="Prompt for Good Admin"
@@ -30,6 +40,7 @@ export default function App() {
       requireAuth
     >
       <CustomRoutes>
+        <Route path="/dashboard" element={<PublicDashboard embedded />} />
         <Route path="/operations" element={<OperationsPage />} />
         <Route path="/scoring" element={<ScoringPage />} />
       </CustomRoutes>
@@ -65,4 +76,9 @@ export default function App() {
       />
     </Admin>
   );
+}
+
+/** Lets direct static routes render publicly before React-admin owns hash routing. */
+function isDirectPublicDashboardLocation() {
+  return window.location.pathname === "/dashboard";
 }

@@ -204,12 +204,7 @@ matching latency reaches 100 ms durably; then move ranking into the database.
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-2. **Dashboard and missing API surface**
-   - Build the public hub dashboard for repositories, issues, pull requests,
-     contributors, runners and token usage.
-   - Add the documented `GET /repos` endpoint.
-
-3. **Operations and deployment**
+2. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.
@@ -223,4 +218,3 @@ matching latency reaches 100 ms durably; then move ranking into the database.
 - **Language-specific build runners:** Detect language (Maven, Gradle, npm, pip, cargo) and adapt build commands
 - **Multi-LLM support:** Plugin architecture to support OpenAI GPT-4o, Google Gemini
 - **Secure authentication:** Replace the static admin token with standard `Authorization: Bearer` auth, ideally backed by JWT/OIDC with scoped admin permissions
-- **pfg-hub dashboard:** Web UI for stats (repos, PRs, contributors, token usage)
