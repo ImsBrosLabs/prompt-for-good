@@ -59,6 +59,7 @@ class HubClient:
         pr_url: str | None = None,
         tokens_used: int = 0,
         error_message: str | None = None,
+        details: dict[str, object] | None = None,
     ) -> None:
         """Report the outcome of an issue processing attempt."""
         payload = {
@@ -66,6 +67,7 @@ class HubClient:
             "prUrl": pr_url,
             "tokensUsed": tokens_used,
             "errorMessage": error_message,
+            "details": details or {},
         }
         resp = self._request("POST", f"/issues/{issue_id}/done", json=payload)
         resp.raise_for_status()

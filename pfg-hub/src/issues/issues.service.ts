@@ -205,6 +205,7 @@ export class IssuesService {
         status: request.success ? "SUCCESS" : "FAILED",
         tokensUsed: request.tokensUsed ?? null,
         errorMessage: request.errorMessage ?? null,
+        details: request.details ?? {},
       });
     });
   }
@@ -273,6 +274,7 @@ export class IssuesService {
             status: "FAILED",
             tokensUsed: null,
             errorMessage: "Claim timed out",
+            details: { reason: "claim_timeout" },
             createdAt: now,
           });
         }

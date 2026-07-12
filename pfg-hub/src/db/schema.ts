@@ -148,6 +148,10 @@ export const contributions = pgTable("contributions", {
     .notNull(),
   tokensUsed: bigint("tokens_used", { mode: "number" }),
   errorMessage: text("error_message"),
+  details: jsonb("details")
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default({}),
   createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
 });
 

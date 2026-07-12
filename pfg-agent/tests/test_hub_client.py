@@ -153,3 +153,41 @@ def test_heartbeat_sends_preferences(monkeypatch):
             },
         ),
     ]
+
+
+def test_report_done_sends_structured_details(monkeypatch):
+    calls = []
+    request = httpx.Request("POST", "http://hub.test/issues/issue-1/done")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return httpx.Response(204, request=request)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient("http://hub.test", "token")
+    client.report_done(
+        "issue-1",
+        success=False,
+        tokens_used=42,
+        error_message="tests failed",
+        details={"verification": {"status": "failed"}},
+    )
+
+    assert calls == [
+        (
+            "POST",
+            "http://hub.test/issues/issue-1/done",
+            {
+                "headers": {"X-Runner-Token": "token"},
+                "timeout": 10.0,
+                "json": {
+                    "success": False,
+                    "prUrl": None,
+                    "tokensUsed": 42,
+                    "errorMessage": "tests failed",
+                    "details": {"verification": {"status": "failed"}},
+                },
+            },
+        ),
+    ]
