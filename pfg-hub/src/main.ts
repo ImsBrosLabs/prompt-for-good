@@ -56,7 +56,7 @@ async function bootstrap() {
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   configureCors(app, config);
-  configureOpenApi(app);
+  configureOpenApi(app, config);
 
   await app.listen(config.port, "0.0.0.0");
 }

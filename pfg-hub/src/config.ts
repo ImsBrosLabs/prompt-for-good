@@ -6,6 +6,7 @@ export type AppConfig = {
   httpsEnabled: boolean;
   httpsCertPath: string;
   httpsKeyPath: string;
+  publicBaseUrl?: string;
   databaseUrl: string;
   githubToken: string;
   adminKey: string;
@@ -33,6 +34,8 @@ export function loadConfig(configService?: EnvReader): AppConfig {
     httpsKeyPath:
       readEnv(configService, "HTTPS_KEY_PATH") ??
       "./certs/hub.pfg.local-key.pem",
+    publicBaseUrl:
+      readEnv(configService, "PUBLIC_BASE_URL")?.trim() || undefined,
     databaseUrl:
       readEnv(configService, "DATABASE_URL") ??
       "postgresql://pfg:pfg@localhost:5432/pfg",

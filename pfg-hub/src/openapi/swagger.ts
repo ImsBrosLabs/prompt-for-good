@@ -1,8 +1,13 @@
 import { INestApplication } from "@nestjs/common";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import type { AppConfig } from "../config";
 
 /** Registers Swagger UI and the generated OpenAPI JSON/YAML endpoints. */
-export function configureOpenApi(app: INestApplication): void {
+export function configureOpenApi(
+  app: INestApplication,
+  config?: Pick<AppConfig, "publicBaseUrl">,
+): void {
+  const serverUrl = resolveOpenApiServerUrl(config);
   const openApiConfig = new DocumentBuilder()
     .setTitle("PFG Hub API")
     .setDescription(
@@ -15,7 +20,7 @@ export function configureOpenApi(app: INestApplication): void {
       "",
     )
     .setLicense("MIT", "")
-    .addServer("http://localhost:8080", "Local development")
+    .addServer(serverUrl, "Current deployment")
     .addApiKey(
       {
         type: "apiKey",
@@ -43,4 +48,17 @@ export function configureOpenApi(app: INestApplication): void {
     jsonDocumentUrl: "docs-json",
     yamlDocumentUrl: "docs-yaml",
   });
+}
+
+/** Keeps Swagger UI on the serving origin unless an explicit public URL is configured. */
+export function resolveOpenApiServerUrl(
+  config?: Pick<AppConfig, "publicBaseUrl">,
+): string {
+  const publicBaseUrl = config?.publicBaseUrl?.trim();
+
+  if (!publicBaseUrl) {
+    return "/";
+  }
+
+  return publicBaseUrl.replace(/\/+$/, "") || "/";
 }
