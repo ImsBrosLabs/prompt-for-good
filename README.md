@@ -51,10 +51,11 @@ The intended agent pipeline is:
 | 1. Claim | Implemented in hub | Runner fetches the next qualified issue |
 | 2. Analyze | Agent work in progress | LLM understands issue and likely files |
 | 3. Context | Agent work in progress | Clone repo and extract relevant context |
-| 4. Solve | Agent work in progress | Generate a targeted patch |
-| 5. Verify | Agent work in progress | Run build/tests locally and retry on failure |
-| 6. PR | Agent work in progress | Push branch and open a pull request |
-| 7. Report | Implemented in hub | Runner reports success/failure to the hub |
+| 4. Plan verification | Agent work in progress | Infer repo-recommended setup and verification commands |
+| 5. Solve | Agent work in progress | Generate a targeted patch |
+| 6. Verify | Agent work in progress | Run planned commands locally and retry on failure |
+| 7. PR | Agent work in progress | Push branch and open a pull request |
+| 8. Report | Implemented in hub | Runner reports success/failure to the hub |
 
 ---
 

@@ -8,6 +8,7 @@ from anthropic import Anthropic
 from pfg_agent.config import settings
 from pfg_agent.hub_client import Issue
 from pfg_agent.phases.context import CodeContext
+from pfg_agent.phases.plan_verification import VerificationPlan, verification_plan_details
 
 log = structlog.get_logger()
 _client = Anthropic(api_key=settings.anthropic_api_key)
@@ -19,6 +20,9 @@ Description: {body}
 
 Relevant source files:
 {files}
+
+Planned local verification:
+{verification_plan}
 
 {error_context}
 
@@ -46,6 +50,7 @@ def generate_patch(
     issue: Issue,
     context: CodeContext,
     previous_error: str | None = None,
+    verification_plan: VerificationPlan | None = None,
 ) -> Patch:
     """Ask Claude to generate a diff that fixes the issue."""
     files_block = "\n\n".join(
@@ -65,6 +70,7 @@ Please fix the issue taking this error into account.
         title=issue.title,
         body=issue.body or "(no description)",
         files=files_block,
+        verification_plan=_format_verification_plan(verification_plan),
         error_context=error_context,
     )
 
@@ -83,6 +89,19 @@ Please fix the issue taking this error into account.
         "patch generated", issue_id=issue.id, tokens=tokens_used, diff_lines=len(diff.splitlines())
     )
     return Patch(diff=diff, tokens_used=tokens_used)
+
+
+# Keeps the solve prompt aware of the fixed commands that will validate every retry.
+def _format_verification_plan(plan: VerificationPlan | None) -> str:
+    if plan is None:
+        return "(no verification plan available)"
+    details = verification_plan_details(plan)
+    setup = ", ".join(command["command"] for command in details["setupCommands"]) or "(none)"
+    verification = (
+        ", ".join(command["command"] for command in details["verificationCommands"]) or "(none)"
+    )
+    decisions = "; ".join(details["decisions"]) or "(none)"
+    return f"setup: {setup}\nverification: {verification}\ndecisions: {decisions}"
 
 
 def _extract_diff(text: str) -> str:

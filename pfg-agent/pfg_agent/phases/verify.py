@@ -1,5 +1,6 @@
-"""Phase 5: Apply the patch locally and run build + tests."""
+"""Phase 5: Apply the patch locally and run planned setup + verification commands."""
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,21 +9,17 @@ from typing import Literal
 import structlog
 
 from pfg_agent.phases.context import CodeContext
+from pfg_agent.phases.plan_verification import (
+    PlannedCommand,
+    VerificationPlan,
+    fallback_verification_plan,
+    verification_plan_details,
+)
 from pfg_agent.phases.solve import Patch
 
 log = structlog.get_logger()
 VERIFY_TIMEOUT_SECONDS = 300
 VERIFY_LOG_TAIL_CHARS = 3000
-
-_BUILD_COMMANDS: dict[str, list[str]] = {
-    "pom.xml": ["mvn", "test", "-q"],
-    "build.gradle": ["./gradlew", "test", "--quiet"],
-    "build.gradle.kts": ["./gradlew", "test", "--quiet"],
-    "package.json": ["npm", "test", "--silent"],
-    "Cargo.toml": ["cargo", "test", "--quiet"],
-    "pyproject.toml": ["python", "-m", "pytest", "-q"],
-    "setup.py": ["python", "-m", "pytest", "-q"],
-}
 
 
 @dataclass
@@ -33,11 +30,23 @@ class VerifyResult:
     details: dict[str, object] | None = None
 
 
-def verify_patch(context: CodeContext, patch: Patch) -> VerifyResult:
-    """Apply the patch and run the project's test suite."""
+@dataclass
+class CommandRunResult:
+    phase: Literal["setup", "verification"]
+    command: str
+    status: Literal["passed", "failed"]
+    return_code: int | None
+    stdout_tail: str
+    stderr_tail: str
+    timed_out: bool
+
+
+# Applies the proposed diff, then executes the frozen setup/verification plan in order.
+def verify_patch(
+    context: CodeContext, patch: Patch, plan: VerificationPlan | None = None
+) -> VerifyResult:
     repo_path = context.repo_path
 
-    # Apply patch
     apply_result = subprocess.run(
         ["git", "apply", "--check", "-"],
         input=patch.diff,
@@ -95,10 +104,9 @@ def verify_patch(context: CodeContext, patch: Patch) -> VerifyResult:
             },
         )
 
-    # Detect build system and run tests
-    build_cmd = _detect_build_command(repo_path)
-    if build_cmd is None:
-        log.warning("no known build system detected, skipping test run")
+    plan = plan or fallback_verification_plan(repo_path)
+    if plan is None or not plan.verification_commands:
+        log.warning("no verification command planned, skipping test run")
         return VerifyResult(
             success=True,
             status="skipped",
@@ -107,88 +115,55 @@ def verify_patch(context: CodeContext, patch: Patch) -> VerifyResult:
                 "verification": {
                     "status": "skipped",
                     "command": None,
+                    "plan": _plan_details(plan),
                     "missingBuildSystem": True,
                 },
             },
         )
 
-    log.info("running tests", cmd=build_cmd, cwd=str(repo_path))
-    try:
-        test_result = subprocess.run(
-            build_cmd,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=VERIFY_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout_tail = _tail(exc.stdout)
-        stderr_tail = _tail(exc.stderr)
-        error = f"verification timed out after {VERIFY_TIMEOUT_SECONDS}s"
-        log.warning("tests timed out", timeout_seconds=VERIFY_TIMEOUT_SECONDS)
-        return VerifyResult(
-            success=False,
-            status="failed",
-            error=error,
-            details={
-                "patch": {"applied": True},
-                "verification": {
-                    "status": "failed",
-                    "reason": "timeout",
-                    "command": build_cmd,
-                    "stdoutTail": stdout_tail,
-                    "stderrTail": stderr_tail,
-                    "timedOut": True,
-                    "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
+    command_results: list[dict[str, object]] = []
+    for phase, command in _iter_plan_commands(plan):
+        log.info("running verification command", phase=phase, command=command.command)
+        result = _run_planned_command(phase, command.command, repo_path)
+        result_details = _command_result_details(result)
+        command_results.append(result_details)
+        if result.status == "failed":
+            reason = _failure_reason(result)
+            error = (
+                f"verification timed out after {VERIFY_TIMEOUT_SECONDS}s"
+                if result.timed_out
+                else _tail(result.stdout_tail + result.stderr_tail)
+            )
+            log.warning(
+                "verification command failed",
+                phase=phase,
+                command=command.command,
+                timed_out=result.timed_out,
+                returncode=result.return_code,
+            )
+            return VerifyResult(
+                success=False,
+                status="failed",
+                error=error,
+                details={
+                    "patch": {"applied": True},
+                    "verification": {
+                        "status": "failed",
+                        "reason": reason,
+                        "phase": phase,
+                        "command": command.command,
+                        "plan": _plan_details(plan),
+                        "commands": command_results,
+                        "returnCode": result.return_code,
+                        "stdoutTail": result.stdout_tail,
+                        "stderrTail": result.stderr_tail,
+                        "timedOut": result.timed_out,
+                        "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
+                    },
                 },
-            },
-        )
-    except FileNotFoundError as exc:
-        error = f"build command not found: {build_cmd[0]}"
-        log.warning("build command not found", cmd=build_cmd, error=str(exc))
-        return VerifyResult(
-            success=False,
-            status="failed",
-            error=error,
-            details={
-                "patch": {"applied": True},
-                "verification": {
-                    "status": "failed",
-                    "reason": "command_not_found",
-                    "command": build_cmd,
-                    "stdoutTail": "",
-                    "stderrTail": str(exc),
-                    "timedOut": False,
-                    "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
-                },
-            },
-        )
+            )
 
-    if test_result.returncode != 0:
-        stdout_tail = _tail(test_result.stdout)
-        stderr_tail = _tail(test_result.stderr)
-        error = _tail(test_result.stdout + test_result.stderr)
-        log.warning("tests failed", returncode=test_result.returncode)
-        return VerifyResult(
-            success=False,
-            status="failed",
-            error=error,
-            details={
-                "patch": {"applied": True},
-                "verification": {
-                    "status": "failed",
-                    "reason": "command_failed",
-                    "command": build_cmd,
-                    "returnCode": test_result.returncode,
-                    "stdoutTail": stdout_tail,
-                    "stderrTail": stderr_tail,
-                    "timedOut": False,
-                    "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
-                },
-            },
-        )
-
-    log.info("tests passed")
+    log.info("verification commands passed")
     return VerifyResult(
         success=True,
         status="passed",
@@ -196,10 +171,9 @@ def verify_patch(context: CodeContext, patch: Patch) -> VerifyResult:
             "patch": {"applied": True},
             "verification": {
                 "status": "passed",
-                "command": build_cmd,
-                "returnCode": test_result.returncode,
-                "stdoutTail": _tail(test_result.stdout),
-                "stderrTail": _tail(test_result.stderr),
+                "command": command_results[-1]["command"] if command_results else None,
+                "plan": _plan_details(plan),
+                "commands": command_results,
                 "timedOut": False,
                 "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
             },
@@ -207,11 +181,88 @@ def verify_patch(context: CodeContext, patch: Patch) -> VerifyResult:
     )
 
 
-def _detect_build_command(repo_path: Path) -> list[str] | None:
-    for indicator, cmd in _BUILD_COMMANDS.items():
-        if (repo_path / indicator).exists():
-            return cmd
-    return None
+# Runs setup commands before verification commands while preserving command evidence for logs.
+def _iter_plan_commands(
+    plan: VerificationPlan,
+) -> list[tuple[Literal["setup", "verification"], PlannedCommand]]:
+    return [
+        *[("setup", command) for command in plan.setup_commands],
+        *[("verification", command) for command in plan.verification_commands],
+    ]
+
+
+# Executes repository-provided commands through the shell but without runner-owned secrets.
+def _run_planned_command(
+    phase: Literal["setup", "verification"], command: str, repo_path: Path
+) -> CommandRunResult:
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=VERIFY_TIMEOUT_SECONDS,
+            env=_repo_command_env(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return CommandRunResult(
+            phase=phase,
+            command=command,
+            status="failed",
+            return_code=None,
+            stdout_tail=_tail(exc.stdout),
+            stderr_tail=_tail(exc.stderr),
+            timed_out=True,
+        )
+
+    return CommandRunResult(
+        phase=phase,
+        command=command,
+        status="passed" if result.returncode == 0 else "failed",
+        return_code=result.returncode,
+        stdout_tail=_tail(result.stdout),
+        stderr_tail=_tail(result.stderr),
+        timed_out=False,
+    )
+
+
+# Removes runner credentials from the environment inherited by untrusted repository commands.
+def _repo_command_env() -> dict[str, str]:
+    secret_markers = ("TOKEN", "SECRET", "API_KEY", "PASSWORD")
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not any(marker in key.upper() for marker in secret_markers)
+    }
+
+
+# Distinguishes setup failures from verification failures without changing retry behavior.
+def _failure_reason(result: CommandRunResult) -> str:
+    if result.phase == "setup":
+        return "setup_timeout" if result.timed_out else "setup_command_failed"
+    return "timeout" if result.timed_out else "command_failed"
+
+
+# Keeps command execution diagnostics consistent across setup and verification phases.
+def _command_result_details(result: CommandRunResult) -> dict[str, object]:
+    return {
+        "phase": result.phase,
+        "command": result.command,
+        "status": result.status,
+        "returnCode": result.return_code,
+        "stdoutTail": result.stdout_tail,
+        "stderrTail": result.stderr_tail,
+        "timedOut": result.timed_out,
+        "timeoutSeconds": VERIFY_TIMEOUT_SECONDS,
+    }
+
+
+# Serializes optional plans defensively so skipped legacy repos still report cleanly.
+def _plan_details(plan: VerificationPlan | None) -> dict[str, object] | None:
+    if plan is None:
+        return None
+    return verification_plan_details(plan)
 
 
 # Reads the repository base revision once so retries can return to a stable tree.
@@ -224,6 +275,27 @@ def get_current_head(repo_path: Path) -> str:
         check=True,
     )
     return result.stdout.strip()
+
+
+# Rebuilds the PR worktree from the verified diff after setup/test commands may have written files.
+def restore_patch_worktree(repo_path: Path, patch: Patch, revision: str) -> None:
+    reset_worktree(repo_path, revision)
+    subprocess.run(
+        ["git", "apply", "--check", "-"],
+        input=patch.diff,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "apply", "-"],
+        input=patch.diff,
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
 
 
 # Removes all generated changes from a failed attempt before another patch is requested.

@@ -1,4 +1,4 @@
-"""7-phase agent pipeline: Claim → Analyze → Context → Solve → Verify → PR → Report."""
+"""Agent pipeline: claim, analyze, context, plan verification, solve, verify, PR, report."""
 
 import structlog
 
@@ -7,16 +7,22 @@ from pfg_agent.hub_client import HubClient, Issue
 from pfg_agent.phases.analyze import analyze_issue
 from pfg_agent.phases.claim import claim_issue
 from pfg_agent.phases.context import gather_context
+from pfg_agent.phases.plan_verification import plan_verification, verification_plan_details
 from pfg_agent.phases.pr import open_pull_request
 from pfg_agent.phases.report import report_done
 from pfg_agent.phases.solve import generate_patch
-from pfg_agent.phases.verify import get_current_head, reset_worktree, verify_patch
+from pfg_agent.phases.verify import (
+    get_current_head,
+    reset_worktree,
+    restore_patch_worktree,
+    verify_patch,
+)
 
 log = structlog.get_logger()
 
 
 class AgentPipeline:
-    """Orchestrates the full 7-phase contribution pipeline."""
+    """Orchestrates the full contribution pipeline."""
 
     def __init__(self) -> None:
         self.hub = HubClient(
@@ -85,14 +91,19 @@ class AgentPipeline:
             details["baseRevision"] = base_revision
             reset_worktree(context.repo_path, base_revision)
 
-            # Phase 4: Solve
-            patch = generate_patch(issue, context)
+            # Phase 4: Plan verification
+            verification_plan = plan_verification(context)
+            tokens_used += verification_plan.tokens_used
+            details["verificationPlan"] = verification_plan_details(verification_plan)
+
+            # Phase 5: Solve
+            patch = generate_patch(issue, context, verification_plan=verification_plan)
             tokens_used += patch.tokens_used
 
-            # Phase 5: Verify (with retries)
+            # Phase 6: Verify (with retries)
             for attempt in range(1, settings.max_retries + 1):
                 log.info("verifying patch", attempt=attempt)
-                verified = verify_patch(context, patch)
+                verified = verify_patch(context, patch, verification_plan)
                 attempt_details = {
                     "attempt": attempt,
                     "patchTokensUsed": patch.tokens_used,
@@ -106,13 +117,19 @@ class AgentPipeline:
                 log.warning("patch verification failed", attempt=attempt, error=verified.error)
                 if attempt < settings.max_retries:
                     reset_worktree(context.repo_path, base_revision)
-                    patch = generate_patch(issue, context, previous_error=verified.error)
+                    patch = generate_patch(
+                        issue,
+                        context,
+                        previous_error=verified.error,
+                        verification_plan=verification_plan,
+                    )
                     tokens_used += patch.tokens_used
             else:
                 reset_worktree(context.repo_path, base_revision)
                 raise RuntimeError(f"patch failed after {settings.max_retries} attempts")
 
-            # Phase 6: PR
+            # Phase 7: PR
+            restore_patch_worktree(context.repo_path, patch, base_revision)
             pr_result = open_pull_request(issue, patch)
             pr_url = pr_result.url
             details["pullRequest"] = pr_result.details
@@ -135,7 +152,7 @@ class AgentPipeline:
                     }
 
         finally:
-            # Phase 7: Report
+            # Phase 8: Report
             report_done(
                 hub=self.hub,
                 issue=issue,
