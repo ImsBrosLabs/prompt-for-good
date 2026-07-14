@@ -93,6 +93,27 @@ cp .env.example .env
 docker compose up --build hub admin
 ```
 
+To run the local hub, hub admin, and runner together, use the root helper:
+
+```bash
+./scripts/dev-up.sh
+```
+
+The helper uses the root `docker-compose.yml`, so the runner reaches the local
+hub on the Compose network through `PFG_HUB_URL=http://hub:8080`.
+
+Stop all root development containers, including profile-backed services, with:
+
+```bash
+./scripts/dev-down.sh
+```
+
+Pass Docker Compose `down` options when needed, for example:
+
+```bash
+./scripts/dev-down.sh --volumes
+```
+
 The hub and admin are available at:
 
 ```text
@@ -134,6 +155,12 @@ Run the agent or runner against the local hub:
 ```bash
 docker compose --profile agent up agent
 docker compose --profile runner up runner
+```
+
+The same runner setup can be started with:
+
+```bash
+./scripts/dev-up.sh runner
 ```
 
 ### Native hub development
@@ -291,6 +318,13 @@ docker compose up --build
 cd pfg-runner
 cp .env.example .env
 docker compose up
+```
+
+That compose file is for the standalone runner distribution. When the runner
+should use the local hub from this repository, run the root helper instead:
+
+```bash
+./scripts/dev-up.sh runner
 ```
 
 ---

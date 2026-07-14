@@ -1,4 +1,43 @@
 services:
+  pfg-agent-admin-api:
+    build:
+      context: ../pfg-agent-admin-api
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    env_file:
+      - path: ../.env
+        required: false
+      - path: ./.env
+        required: false
+    environment:
+      PORT: 8091
+      CONFIG_DATABASE_PATH: /data/pfg-agent-admin.sqlite
+      CORS_ORIGINS: ${PFG_AGENT_ADMIN_CORS_ORIGINS:-http://localhost:5174,http://127.0.0.1:5174}
+    ports:
+      - "${PFG_AGENT_ADMIN_API_PORT:-8091}:8091"
+    volumes:
+      - agent-admin-data:/data
+      - ../pfg-agent-admin-api:/workspace
+      - agent_admin_api_node_modules:/workspace/node_modules
+
+  pfg-agent-admin:
+    build:
+      context: ../pfg-agent-admin
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    environment:
+      VITE_PFG_AGENT_ADMIN_API_URL: ${VITE_PFG_AGENT_ADMIN_API_URL:-http://localhost:8091}
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_USE_POLLING: "true"
+      VITE_POLL_INTERVAL: "100"
+    ports:
+      - "${PFG_AGENT_ADMIN_PORT:-5174}:5174"
+    volumes:
+      - ../pfg-agent-admin:/workspace
+      - agent_admin_node_modules:/workspace/node_modules
+    depends_on:
+      - pfg-agent-admin-api
+
   pfg-runner:
     build:
       context: ..
@@ -14,6 +53,13 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
       MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
+      PFG_AGENT_ADMIN_API_URL: http://pfg-agent-admin-api:8091
+      PFG_AGENT_ADMIN_TOKEN: ${PFG_AGENT_ADMIN_TOKEN:-}
+    depends_on:
+      - pfg-agent-admin-api
 
 volumes:
+  agent-admin-data:
+  agent_admin_api_node_modules:
+  agent_admin_node_modules:
   pfg-work:
