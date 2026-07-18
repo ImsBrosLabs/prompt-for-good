@@ -154,6 +154,25 @@ describe("RuntimeConfigService", () => {
     });
   });
 
+  it("builds a runner snapshot with effective values but without the local admin token", async () => {
+    const { service } = createService({
+      env: {
+        PFG_AGENT_ADMIN_TOKEN: "admin-token",
+        GITHUB_TOKEN: "ghp_secret",
+        MAX_RETRIES: "7",
+      },
+      listRows: [override("MAX_RETRIES", 5)],
+    });
+
+    const snapshot = await service.runnerSnapshot();
+
+    expect(snapshot).toMatchObject({
+      GITHUB_TOKEN: "ghp_secret",
+      MAX_RETRIES: 5,
+    });
+    expect(snapshot).not.toHaveProperty("PFG_AGENT_ADMIN_TOKEN");
+  });
+
   it("persists secret database overrides without echoing secret values", async () => {
     const { service, insert } = createService({
       env: { GITHUB_TOKEN: "env-github-token" },

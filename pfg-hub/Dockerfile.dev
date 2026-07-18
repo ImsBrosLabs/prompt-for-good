@@ -2,10 +2,11 @@ FROM node:22-bookworm-slim
 
 WORKDIR /workspace
 
-COPY package*.json ./
+COPY pfg-runtime-config-core /pfg-runtime-config-core
+COPY pfg-hub/package*.json ./
 RUN npm install
 
-COPY . .
+COPY pfg-hub .
 
 EXPOSE 8080
 

@@ -9,6 +9,14 @@ import structlog
 
 log = structlog.get_logger()
 
+TRANSIENT_HUB_ERRORS = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadError,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+)
+
 
 @dataclass
 class Issue:
@@ -28,6 +36,7 @@ class HubClient:
         request_timeout: float = 10.0,
         retry_attempts: int = 5,
         retry_delay_seconds: float = 2.0,
+        tls_verify: bool = True,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -35,6 +44,7 @@ class HubClient:
         self.request_timeout = request_timeout
         self.retry_attempts = retry_attempts
         self.retry_delay_seconds = retry_delay_seconds
+        self.tls_verify = tls_verify
         self._sleep = sleep
 
     def get_next_issue(self) -> Issue | None:
@@ -98,9 +108,10 @@ class HubClient:
                     url,
                     headers=self.headers,
                     timeout=self.request_timeout,
+                    verify=self.tls_verify,
                     **kwargs,
                 )
-            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            except TRANSIENT_HUB_ERRORS as exc:
                 if attempt == max_attempts:
                     log.error(
                         "hub request failed",

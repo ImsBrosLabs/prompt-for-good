@@ -117,11 +117,13 @@ Pass Docker Compose `down` options when needed, for example:
 The hub and admin are available at:
 
 ```text
-http://localhost:8080/actuator/health
-http://localhost:8080/docs
-http://localhost:8080/docs-json
+https://hub.pfg.local:8080/actuator/health   # when HTTPS_ENABLED=true
+https://hub.pfg.local:8080/docs
+https://hub.pfg.local:8080/docs-json
 http://localhost:5173
 ```
+
+If `HTTPS_ENABLED=false`, use `http://localhost:8080` for the hub URLs instead.
 
 Source changes under `pfg-hub/` and `pfg-hub-admin/` are bind-mounted into the
 containers. The Docker development services enable polling-based watchers, so

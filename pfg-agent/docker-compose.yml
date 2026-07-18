@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.dev
     environment:
       PFG_HUB_URL: ${PFG_HUB_URL:-http://host.docker.internal:8080}
+      PFG_HUB_TLS_VERIFY: ${PFG_HUB_TLS_VERIFY:-true}
       PFG_TOKEN: ${PFG_TOKEN:-test-token}
       RUNNER_ID: ${RUNNER_ID:-00000000-0000-0000-0000-000000000000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-key}

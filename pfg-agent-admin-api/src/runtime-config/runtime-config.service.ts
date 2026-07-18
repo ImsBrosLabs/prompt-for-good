@@ -5,6 +5,13 @@ import {
   InternalServerErrorException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import {
+  indexRuntimeConfigCatalog,
+  parseRuntimeConfigValue,
+  resolveRuntimeConfigValue,
+  RuntimeConfigValueSource,
+  toRuntimeConfigAdminItem,
+} from "@pfg/runtime-config-core/runtimeConfig";
 import { eq } from "drizzle-orm";
 import { DATABASE, Database } from "../db/database.module";
 import {
@@ -18,9 +25,12 @@ import {
   RuntimeConfigCatalogEntry,
   RuntimeConfigKey,
   RuntimeConfigValue,
-  RuntimeConfigValueSource,
-  runtimeConfigCatalogByKey,
 } from "./runtime-config.catalog";
+
+const RUNNER_SNAPSHOT_EXCLUDED_KEYS = new Set<RuntimeConfigKey>([
+  "PFG_AGENT_ADMIN_TOKEN",
+]);
+const runtimeConfigCatalogByKey = indexRuntimeConfigCatalog(RUNTIME_CONFIG_CATALOG);
 
 export type RuntimeConfigChange = {
   key: RuntimeConfigKey;
@@ -57,6 +67,23 @@ export class RuntimeConfigService {
     return RUNTIME_CONFIG_CATALOG.map((entry) =>
       this.toAdminItem(entry, overridesByKey.get(entry.key) ?? null),
     );
+  }
+
+  /** Builds the runner-facing snapshot with effective values, including runner secrets. */
+  async runnerSnapshot(): Promise<Record<string, RuntimeConfigJsonValue>> {
+    const overrides = await this.db.select().from(runtimeConfigOverrides);
+    const overridesByKey = new Map(overrides.map((row) => [row.key, row]));
+    const values: Record<string, RuntimeConfigJsonValue> = {};
+
+    for (const entry of RUNTIME_CONFIG_CATALOG) {
+      if (RUNNER_SNAPSHOT_EXCLUDED_KEYS.has(entry.key)) continue;
+      values[entry.env] = this.resolveValue(
+        entry,
+        overridesByKey.get(entry.key) ?? null,
+      ).value;
+    }
+
+    return values;
   }
 
   /** Validates and stores an explicit local database override. */
@@ -147,37 +174,21 @@ export class RuntimeConfigService {
     entry: RuntimeConfigCatalogEntry,
     override: RuntimeConfigOverride | null,
   ): RuntimeConfigItemDto {
-    const resolved = this.resolveValue(entry, override);
-    const value = entry.secret ? null : resolved.value;
-    const defaultValue = entry.secret ? null : entry.defaultValue;
-    const environmentValue = this.environmentValue(entry);
-
-    return {
-      id: entry.key,
-      key: entry.key,
-      value,
-      environmentValue,
-      source: resolved.source,
-      hasDatabaseOverride: override !== null,
-      updatedAt: override?.updatedAt ?? null,
-      updatedBy: override?.updatedBy ?? null,
-      metadata: {
-        env: entry.env,
-        label: entry.label,
-        description: entry.description,
-        category: entry.category,
-        secret: entry.secret,
-        valueType: entry.valueType,
-        defaultValue,
-        requiredForSetup: entry.requiredForSetup,
-      },
-    };
-  }
-
-  /** Exposes non-secret startup env fallbacks without leaking credentials. */
-  private environmentValue(entry: RuntimeConfigCatalogEntry): string | null {
-    if (entry.secret) return null;
-    return this.configService.get<string>(entry.env) ?? null;
+    return toRuntimeConfigAdminItem({
+      entry,
+      override,
+      readEnv: (env) => this.configService.get<string>(env),
+      invalidDatabaseValue: (key) =>
+        new BadRequestException(
+          `Invalid value for runtime configuration key: ${key}`,
+        ),
+      invalidConfiguredValue: (key, source) =>
+        new InternalServerErrorException(
+          `Invalid ${source} value for runtime configuration key: ${key}`,
+        ),
+      formatUpdatedAt: (value) => String(value),
+      metadata: { requiredForSetup: entry.requiredForSetup },
+    }) as unknown as RuntimeConfigItemDto;
   }
 
   /** Runs listeners after persistence so dependent local services can react. */
@@ -190,27 +201,24 @@ export class RuntimeConfigService {
     entry: RuntimeConfigCatalogEntry,
     override: RuntimeConfigOverride | null,
   ): {
-    value: unknown;
+    value: RuntimeConfigJsonValue;
     source: RuntimeConfigValueSource;
   } {
-    if (override) {
-      return {
-        value: this.parse(entry, override.value, "database"),
-        source: "database",
-      };
-    }
-
-    const envValue = this.configService.get<string>(entry.env);
-    if (envValue !== undefined) {
-      return {
-        value: this.parse(entry, envValue, "environment"),
-        source: "environment",
-      };
-    }
-
-    return {
-      value: this.parse(entry, entry.defaultValue, "default"),
-      source: "default",
+    return resolveRuntimeConfigValue({
+      entry,
+      override,
+      readEnv: (env) => this.configService.get<string>(env),
+      invalidDatabaseValue: (key) =>
+        new BadRequestException(
+          `Invalid value for runtime configuration key: ${key}`,
+        ),
+      invalidConfiguredValue: (key, source) =>
+        new InternalServerErrorException(
+          `Invalid ${source} value for runtime configuration key: ${key}`,
+        ),
+    }) as {
+      value: RuntimeConfigJsonValue;
+      source: RuntimeConfigValueSource;
     };
   }
 
@@ -220,18 +228,16 @@ export class RuntimeConfigService {
     value: unknown,
     source: RuntimeConfigValueSource,
   ): RuntimeConfigJsonValue {
-    const result = entry.schema.safeParse(value);
-    if (result.success) return result.data as RuntimeConfigJsonValue;
-
-    if (source === "database") {
-      throw new BadRequestException(
-        `Invalid value for runtime configuration key: ${entry.key}`,
-      );
-    }
-
-    throw new InternalServerErrorException(
-      `Invalid ${source} value for runtime configuration key: ${entry.key}`,
-    );
+    return parseRuntimeConfigValue(entry, value, source, {
+      invalidDatabaseValue: (key) =>
+        new BadRequestException(
+          `Invalid value for runtime configuration key: ${key}`,
+        ),
+      invalidConfiguredValue: (key, invalidSource) =>
+        new InternalServerErrorException(
+          `Invalid ${invalidSource} value for runtime configuration key: ${key}`,
+        ),
+    }) as RuntimeConfigJsonValue;
   }
 }
 

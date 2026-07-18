@@ -17,8 +17,8 @@ services:
 
   hub:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ..
+      dockerfile: pfg-hub/Dockerfile.dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,6 +37,7 @@ services:
       - "8080:8080"
     volumes:
       - .:/workspace
+      - ../pfg-runtime-config-core:/pfg-runtime-config-core
       - hub_node_modules:/workspace/node_modules
 
 volumes:

@@ -1,9 +1,9 @@
 """pfg-agent entry point."""
 
-import httpx
 import structlog
 
 from pfg_agent.config import settings
+from pfg_agent.hub_client import TRANSIENT_HUB_ERRORS
 from pfg_agent.pipeline import AgentPipeline
 
 log = structlog.get_logger()
@@ -15,8 +15,8 @@ def main() -> None:
     pipeline = AgentPipeline()
     try:
         pipeline.run()
-    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-        log.error("unable to connect to pfg-hub", hub_url=settings.pfg_hub_url, error=str(exc))
+    except TRANSIENT_HUB_ERRORS as exc:
+        log.error("unable to reach pfg-hub", hub_url=settings.pfg_hub_url, error=str(exc))
         raise SystemExit(1) from None
 
 

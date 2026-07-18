@@ -114,3 +114,13 @@ export class RuntimeConfigUpdateRequestDto {
   })
   value!: unknown;
 }
+
+export class RuntimeConfigSnapshotDto {
+  @ApiProperty({
+    description:
+      "Effective runner configuration values keyed by environment variable name",
+    additionalProperties: true,
+    type: Object,
+  })
+  values!: Record<string, unknown>;
+}

@@ -21,6 +21,7 @@
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-fastify": "^11.1.0",
     "@nestjs/swagger": "^11.4.5",
+    "@pfg/runtime-config-core": "file:../pfg-runtime-config-core",
     "better-sqlite3": "^12.5.0",
     "drizzle-orm": "^0.45.2",
     "reflect-metadata": "^0.2.2",

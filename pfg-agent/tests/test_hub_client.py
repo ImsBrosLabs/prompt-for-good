@@ -88,8 +88,37 @@ def test_get_next_issue_retries_transient_connection_error(monkeypatch):
     assert calls[0] == (
         "GET",
         "http://hub.test/issues/next",
-        {"headers": {"X-Runner-Token": "token"}, "timeout": 1.5},
+        {"headers": {"X-Runner-Token": "token"}, "timeout": 1.5, "verify": True},
     )
+
+
+def test_get_next_issue_retries_remote_protocol_error(monkeypatch):
+    calls = []
+    sleeps = []
+    request = httpx.Request("GET", "http://hub.test/issues/next")
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if len(calls) == 1:
+            raise httpx.RemoteProtocolError(
+                "Server disconnected without sending a response.",
+                request=request,
+            )
+        return httpx.Response(204)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient(
+        "http://hub.test",
+        "token",
+        retry_attempts=2,
+        retry_delay_seconds=0.25,
+        sleep=sleeps.append,
+    )
+
+    assert client.get_next_issue() is None
+    assert len(calls) == 2
+    assert sleeps == [0.25]
 
 
 def test_get_next_issue_raises_after_retry_attempts(monkeypatch):
@@ -114,6 +143,27 @@ def test_get_next_issue_raises_after_retry_attempts(monkeypatch):
         client.get_next_issue()
 
     assert len(calls) == 3
+
+
+def test_get_next_issue_can_disable_tls_verification(monkeypatch):
+    calls = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return httpx.Response(204)
+
+    monkeypatch.setattr(httpx, "request", fake_request)
+
+    client = HubClient("https://hub.test", "token", tls_verify=False)
+
+    assert client.get_next_issue() is None
+    assert calls == [
+        (
+            "GET",
+            "https://hub.test/issues/next",
+            {"headers": {"X-Runner-Token": "token"}, "timeout": 10.0, "verify": False},
+        ),
+    ]
 
 
 def test_heartbeat_sends_preferences(monkeypatch):
@@ -143,6 +193,7 @@ def test_heartbeat_sends_preferences(monkeypatch):
             {
                 "headers": {"X-Runner-Token": "token"},
                 "timeout": 10.0,
+                "verify": True,
                 "json": {
                     "quotaRemainingToday": 250,
                     "preferences": {
@@ -181,6 +232,7 @@ def test_report_done_sends_structured_details(monkeypatch):
             {
                 "headers": {"X-Runner-Token": "token"},
                 "timeout": 10.0,
+                "verify": True,
                 "json": {
                     "success": False,
                     "prUrl": None,

@@ -10,6 +10,16 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@pfg/admin-ui-core/*": ["../pfg-admin-ui-core/src/*"],
+      "@mui/icons-material/*": ["./node_modules/@mui/icons-material/*"],
+      "@mui/material": ["./node_modules/@mui/material"],
+      "@mui/material/*": ["./node_modules/@mui/material/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-admin": ["./node_modules/react-admin"],
+      "react-admin/*": ["./node_modules/react-admin/*"]
+    },
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
@@ -21,5 +31,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"]
+  "include": ["src", "../pfg-admin-ui-core/src"]
 }

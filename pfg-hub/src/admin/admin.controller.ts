@@ -20,17 +20,8 @@ import {
 } from "../openapi/dtos";
 import { RuntimeConfigKey } from "../runtime-config/runtime-config.catalog";
 import { RuntimeConfigService } from "../runtime-config/runtime-config.service";
-import {
-  AdminListResponse,
-  AdminScoringOverview,
-  AdminService,
-} from "./admin.service";
-
-type ListQuery = {
-  sort?: string;
-  range?: string;
-  filter?: string;
-};
+import { AdminListResponse, ListQuery } from "./admin-listing";
+import { AdminScoringOverview, AdminService } from "./admin.service";
 
 type RequestWithHeaders = {
   headers: Record<string, string | string[] | undefined>;

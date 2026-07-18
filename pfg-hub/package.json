@@ -23,6 +23,7 @@
     "@nestjs/platform-fastify": "^11.1.0",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.4.5",
+    "@pfg/runtime-config-core": "file:../pfg-runtime-config-core",
     "cron": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "pg": "^8.13.0",

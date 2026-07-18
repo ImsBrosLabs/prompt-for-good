@@ -58,6 +58,15 @@ const optionalStringSchema = z.preprocess(
   z.string(),
 );
 
+// Accepts boolean env values from shell/.env while keeping stored overrides typed.
+const booleanSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  return value;
+}, z.boolean());
+
 // Parses JSON-encoded environment values before applying the structured schema.
 const jsonEnvironmentSchema = <Schema extends z.ZodType>(schema: Schema) =>
   z.preprocess((value) => {
@@ -149,6 +158,18 @@ export const RUNTIME_CONFIG_CATALOG = defineCatalog([
     secret: false,
     valueType: "string",
     requiredForSetup: true,
+  },
+  {
+    key: "PFG_HUB_TLS_VERIFY",
+    env: "PFG_HUB_TLS_VERIFY",
+    defaultValue: true,
+    schema: booleanSchema,
+    label: "Verify hub TLS",
+    description: "Verifies the hub HTTPS certificate before runner requests.",
+    category: "Hub connection",
+    secret: false,
+    valueType: "boolean",
+    requiredForSetup: false,
   },
   {
     key: "PFG_TOKEN",
