@@ -348,8 +348,8 @@ docker compose up hub
 The API is available at:
 
 ```text
-http://localhost:8080
-http://localhost:8080/docs
+https://hub.pfg.local:8080
+https://hub.pfg.local:8080/docs
 ```
 
 Run hub checks:

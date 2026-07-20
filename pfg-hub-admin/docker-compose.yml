@@ -17,6 +17,7 @@ services:
       - "${PFG_HUB_ADMIN_PORT:-5173}:5173"
     volumes:
       - .:/workspace
+      - ../pfg-admin-ui-core:/pfg-admin-ui-core
       - admin_node_modules:/workspace/node_modules
 
 volumes:

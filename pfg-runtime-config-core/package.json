@@ -1,0 +1,20 @@
+{
+  "name": "@pfg/runtime-config-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/runtimeConfig.js",
+  "types": "dist/runtimeConfig.d.ts",
+  "typesVersions": {
+    "*": {
+      "runtimeConfig": ["dist/runtimeConfig.d.ts"]
+    }
+  },
+  "exports": {
+    "./runtimeConfig": {
+      "types": "./dist/runtimeConfig.d.ts",
+      "require": "./dist/runtimeConfig.js",
+      "default": "./dist/runtimeConfig.js"
+    }
+  }
+}

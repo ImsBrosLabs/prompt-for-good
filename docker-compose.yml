@@ -18,14 +18,17 @@ x-hub-env-file: &hub-env-file
 
 x-hub-volumes: &hub-volumes
   - ./pfg-hub:/workspace
+  - ./pfg-runtime-config-core:/pfg-runtime-config-core
   - hub_node_modules:/workspace/node_modules
 
 x-admin-volumes: &admin-volumes
   - ./pfg-hub-admin:/workspace
+  - ./pfg-admin-ui-core:/pfg-admin-ui-core
   - admin_node_modules:/workspace/node_modules
 
 x-agent-environment: &agent-environment
   PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
+  PFG_HUB_TLS_VERIFY: ${PFG_HUB_TLS_VERIFY:-true}
   PFG_TOKEN: ${PFG_TOKEN:-test-token}
   RUNNER_ID: ${RUNNER_ID:-00000000-0000-0000-0000-000000000000}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-key}
@@ -73,8 +76,8 @@ services:
 
   hub:
     build:
-      context: ./pfg-hub
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: pfg-hub/Dockerfile.dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,6 +87,10 @@ services:
     ports:
       - "${PFG_HUB_PORT:-8080}:8080"
     volumes: *hub-volumes
+    networks:
+      default:
+        aliases:
+          - hub.pfg.local
 
   admin:
     build:
@@ -106,8 +113,8 @@ services:
 
   hub-test:
     build:
-      context: ./pfg-hub
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: pfg-hub/Dockerfile.dev
     profiles: ["test"]
     depends_on:
       postgres-test:
@@ -120,8 +127,8 @@ services:
 
   hub-lint:
     build:
-      context: ./pfg-hub
-      dockerfile: Dockerfile.dev
+      context: .
+      dockerfile: pfg-hub/Dockerfile.dev
     profiles: ["test"]
     volumes: *hub-volumes
     command: ["sh", "-c", "npm install && npm run lint"]
@@ -177,14 +184,7 @@ services:
     depends_on:
       hub:
         condition: service_started
-    environment:
-      PFG_HUB_URL: ${PFG_HUB_URL:-http://hub:8080}
-      PFG_TOKEN: ${PFG_TOKEN:-}
-      RUNNER_ID: ${RUNNER_ID:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
-      MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
+    env_file: *hub-env-file
     volumes:
       - pfg_work:/tmp/pfg-work
 

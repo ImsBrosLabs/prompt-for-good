@@ -3,28 +3,16 @@ import { and, asc, desc, eq, ilike, or, SQL, sql } from "drizzle-orm";
 import { DATABASE, Database } from "../db/database.module";
 import { contributions, issues, repos, runners } from "../db/schema";
 import { DispatchMetricsService } from "../dispatch-metrics/dispatch-metrics.service";
+import {
+  AdminListResponse,
+  booleanFilter,
+  ListQuery,
+  parseListParams,
+  stringFilter,
+} from "./admin-listing";
 
 const DB_RANKING_QUEUE_SIZE_THRESHOLD = 1000;
 const DB_RANKING_P95_LATENCY_THRESHOLD_MS = 100;
-
-type ListQuery = {
-  sort?: string;
-  range?: string;
-  filter?: string;
-};
-
-type ListParams = {
-  start: number;
-  limit: number;
-  field: string;
-  descending: boolean;
-  filter: Record<string, unknown>;
-};
-
-export type AdminListResponse<RecordType> = {
-  data: RecordType[];
-  total: number;
-};
 
 export type AdminScoringOverview = {
   queueHealth: {
@@ -118,9 +106,9 @@ export class AdminService {
   async listRepositories(
     query: ListQuery,
   ): Promise<AdminListResponse<unknown>> {
-    const params = this.parseListParams(query, "score");
-    const search = this.stringFilter(params.filter.q);
-    const eligible = this.booleanFilter(params.filter.eligible);
+    const params = parseListParams(query, "score");
+    const search = stringFilter(params.filter.q);
+    const eligible = booleanFilter(params.filter.eligible);
     const where = and(
       search
         ? or(
@@ -159,10 +147,10 @@ export class AdminService {
 
   /** Lists issues while preserving the fields displayed by the administration table. */
   async listIssues(query: ListQuery): Promise<AdminListResponse<unknown>> {
-    const params = this.parseListParams(query, "score");
-    const search = this.stringFilter(params.filter.q);
-    const status = this.stringFilter(params.filter.status);
-    const difficulty = this.stringFilter(params.filter.difficulty);
+    const params = parseListParams(query, "score");
+    const search = stringFilter(params.filter.q);
+    const status = stringFilter(params.filter.status);
+    const difficulty = stringFilter(params.filter.difficulty);
     const where = and(
       search
         ? or(
@@ -206,9 +194,9 @@ export class AdminService {
 
   /** Lists runners without exposing authentication tokens or internal preferences. */
   async listRunners(query: ListQuery): Promise<AdminListResponse<unknown>> {
-    const params = this.parseListParams(query, "lastSeenAt");
-    const search = this.stringFilter(params.filter.q);
-    const active = this.booleanFilter(params.filter.active);
+    const params = parseListParams(query, "lastSeenAt");
+    const search = stringFilter(params.filter.q);
+    const active = booleanFilter(params.filter.active);
     const where = and(
       search ? ilike(runners.contributorName, `%${search}%`) : undefined,
       active === undefined ? undefined : eq(runners.active, active),
@@ -248,9 +236,9 @@ export class AdminService {
   async listContributions(
     query: ListQuery,
   ): Promise<AdminListResponse<unknown>> {
-    const params = this.parseListParams(query, "createdAt");
-    const search = this.stringFilter(params.filter.q);
-    const status = this.stringFilter(params.filter.status);
+    const params = parseListParams(query, "createdAt");
+    const search = stringFilter(params.filter.q);
+    const status = stringFilter(params.filter.status);
     const where = and(
       search
         ? or(
@@ -285,58 +273,6 @@ export class AdminService {
       this.count(contributions, where),
     ]);
     return { data, total };
-  }
-
-  /** Parses untrusted React-admin query JSON and clamps ranges to a bounded page size. */
-  private parseListParams(query: ListQuery, defaultSort: string): ListParams {
-    const sort = this.parseTuple(query.sort);
-    const range = this.parseTuple(query.range);
-    const parsedFilter = this.parseJson(query.filter);
-    const start = this.nonNegativeInteger(range?.[0], 0);
-    const requestedEnd = this.nonNegativeInteger(range?.[1], start + 24);
-    const end = Math.max(start, requestedEnd);
-
-    return {
-      start,
-      limit: Math.min(end - start + 1, 100),
-      field: typeof sort?.[0] === "string" ? sort[0] : defaultSort,
-      descending: String(sort?.[1] ?? "DESC").toUpperCase() === "DESC",
-      filter:
-        typeof parsedFilter === "object" &&
-        parsedFilter !== null &&
-        !Array.isArray(parsedFilter)
-          ? (parsedFilter as Record<string, unknown>)
-          : {},
-    };
-  }
-
-  /** Parses a JSON query parameter without allowing malformed input to fail the request. */
-  private parseJson(value: string | undefined): unknown {
-    if (!value) return undefined;
-    try {
-      return JSON.parse(value) as unknown;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private parseTuple(value: string | undefined): unknown[] | undefined {
-    const parsed = this.parseJson(value);
-    return Array.isArray(parsed) ? parsed : undefined;
-  }
-
-  private nonNegativeInteger(value: unknown, fallback: number): number {
-    return typeof value === "number" && Number.isInteger(value) && value >= 0
-      ? value
-      : fallback;
-  }
-
-  private stringFilter(value: unknown): string | undefined {
-    return typeof value === "string" && value.trim() ? value.trim() : undefined;
-  }
-
-  private booleanFilter(value: unknown): boolean | undefined {
-    return typeof value === "boolean" ? value : undefined;
   }
 
   /** Counts rows using the same predicate as the corresponding paginated query. */

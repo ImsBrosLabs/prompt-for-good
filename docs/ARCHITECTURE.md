@@ -254,14 +254,40 @@ uniqueness, empty commits, fork fallback and GitHub API failures predictably.
      token budgets and failure reporting stay comparable across model providers.
 
 4. **Agent configuration admin**
-   - Create a dedicated `pfg-agent-admin` project using the same React, Vite,
-     React-admin and Material UI stack as `pfg-hub-admin`.
-   - Provide a graphical interface for configuring agent settings currently
-     stored in `.env`, plus advanced settings beyond environment variables such
-     as model provider, model name, budgets, verification commands, repository
-     execution limits and runner preferences.
-   - Define how the admin UI persists and exports agent configuration before it
-     is wired into local runner startup.
+   - Create a local Runner Configuration Console, separate from hub
+     administration, with a `pfg-agent-admin` React, Vite, React-admin and
+     Material UI frontend and a dedicated `pfg-agent-admin-api` backend.
+   - Implement `pfg-agent-admin-api` with the same NestJS, Drizzle, migration and
+     catalog-based runtime configuration pattern as `pfg-hub`, but store local
+     runtime configuration overrides in SQLite rather than Postgres.
+   - Resolve runner configuration through `database override → startup .env →
+     catalog default`. The startup `.env` bootstraps the local admin API and can
+     seed fallback values, but normal setup promotes valid values into database
+     overrides managed through the UI.
+   - Use environment variable names as the canonical configuration keys, such as
+     `PFG_HUB_URL`, `PFG_TOKEN`, `RUNNER_ID`, `MODEL_PROVIDER`, `LLM_MODEL`,
+     `MAX_TOKENS_PER_DAY` and `GITHUB_TOKEN`. Use typed JSON values under env
+     keys for structured settings such as `RUNNER_PROJECT_PREFERENCES`,
+     `VERIFICATION_COMMANDS` and `REPOSITORY_EXECUTION_LIMITS`.
+   - Treat hub tokens, model provider API keys and GitHub tokens as secret
+     values. Secret overrides may be promoted from startup `.env` or replaced in
+     the UI, but admin responses never echo persisted secret values in clear
+     text.
+   - Expose a Configuration Resolution API consumed by runner execution; the
+     runner must not read the configuration database directly and should fail
+     startup if the local configuration API is unavailable.
+   - Run `pfg-agent-admin`, `pfg-agent-admin-api` and `pfg-runner` in the same
+     local compose stack so the configuration API is an explicit runner
+     dependency and the SQLite state is shared through a local volume.
+   - Add first-run flows for bootstrap promotion, runner registration against
+     the hub, and non-destructive readiness checks for hub credentials, model
+     provider credentials, GitHub credentials and execution-limit validity.
+   - Capture a stable configuration snapshot before each contribution starts and
+     include a redacted snapshot in `contribution.details` for hub diagnostics.
+     Admin changes apply on the next claim cycle rather than mutating an active
+     contribution.
+   - Do not export `.env` files from the admin UI and do not include runner
+     start, stop or restart controls in this initial configuration scope.
 
 ---
 
@@ -271,3 +297,4 @@ uniqueness, empty commits, fork fallback and GitHub API failures predictably.
 - **Repository command sandboxing:** Add stricter execution isolation for repo-recommended setup and verification commands
 - **Multi-LLM support:** Plugin architecture to support OpenAI, Google Gemini and other model providers
 - **Secure authentication:** Replace the static admin token with standard `Authorization: Bearer` auth, ideally backed by JWT/OIDC with scoped admin permissions
+- **Runner lifecycle control:** Let the local Runner Configuration Console start, stop or restart the runner after the configuration-only scope is complete

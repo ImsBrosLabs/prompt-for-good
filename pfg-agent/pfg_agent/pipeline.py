@@ -31,6 +31,7 @@ class AgentPipeline:
             request_timeout=settings.pfg_hub_request_timeout,
             retry_attempts=settings.pfg_hub_retry_attempts,
             retry_delay_seconds=settings.pfg_hub_retry_delay_seconds,
+            tls_verify=settings.pfg_hub_tls_verify,
         )
         self.tokens_used_today: int = 0
 

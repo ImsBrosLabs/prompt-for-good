@@ -1,0 +1,1 @@
+ALTER TABLE ingestion_runs ALTER COLUMN status SET DEFAULT 'QUEUED';
