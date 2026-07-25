@@ -164,7 +164,7 @@ def test_verify_patch_runs_setup_before_verification_with_filtered_env(tmp_path)
     diff = _diff_for_change(tmp_path, "foo.txt", "new\n")
     setup_command = _python_command(
         "import os, pathlib; "
-        "assert 'GITHUB_TOKEN' not in os.environ; "
+        "assert 'PFG_GITHUB_TOKEN' not in os.environ; "
         "pathlib.Path('sequence.txt').write_text('setup\\n', encoding='utf-8')"
     )
     verification_command = _python_command(

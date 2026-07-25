@@ -127,7 +127,7 @@ cp .env.example .env
 
 # 3. Edit .env
 #    - Set your contributor name
-#    - Set PFG_TOKEN, ANTHROPIC_API_KEY, and GITHUB_TOKEN
+#    - Set PFG_TOKEN, ANTHROPIC_API_KEY, and PFG_GITHUB_TOKEN
 #    - Configure the daily token limit
 
 # 4. Run
@@ -137,7 +137,7 @@ docker compose up
 Environment variables (can also go in `.env`):
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-GITHUB_TOKEN=ghp_...
+PFG_GITHUB_TOKEN=ghp_...
 PFG_TOKEN=<your pfg hub token>
 ```
 
@@ -227,7 +227,7 @@ uv sync
 
 # Copy env config
 cp .env.example .env
-# Fill in ANTHROPIC_API_KEY, GITHUB_TOKEN, PFG_HUB_URL
+# Fill in ANTHROPIC_API_KEY, PFG_GITHUB_TOKEN, PFG_HUB_URL
 ```
 
 Run tests:

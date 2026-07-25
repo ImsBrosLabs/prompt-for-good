@@ -148,7 +148,7 @@ hub:
 
 contributor:
   name: "YourName"
-  github_token: ${GITHUB_TOKEN}
+  github_token: ${PFG_GITHUB_TOKEN}
 
 project_preferences:
   languages: ["python", "typescript"]
@@ -299,7 +299,7 @@ uniqueness, empty commits, fork fallback and GitHub API failures predictably.
      overrides managed through the UI.
    - Use environment variable names as the canonical configuration keys, such as
      `PFG_HUB_URL`, `PFG_TOKEN`, `RUNNER_ID`, `MODEL_PROVIDER`, `LLM_MODEL`,
-     `MAX_TOKENS_PER_DAY` and `GITHUB_TOKEN`. Use typed JSON values under env
+     `MAX_TOKENS_PER_DAY` and `PFG_GITHUB_TOKEN`. Use typed JSON values under env
      keys for structured settings such as `RUNNER_PROJECT_PREFERENCES`,
      `VERIFICATION_COMMANDS` and `REPOSITORY_EXECUTION_LIMITS`.
    - Treat hub tokens, model provider API keys and GitHub tokens as secret

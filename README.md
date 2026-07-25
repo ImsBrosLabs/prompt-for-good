@@ -426,7 +426,7 @@ Hub variables:
 | `PUBLIC_BASE_URL` | unset | Optional absolute public hub URL advertised in OpenAPI docs |
 | `DATABASE_URL` | local postgres URL | Hub PostgreSQL connection string |
 | `ADMIN_KEY` | empty | Admin token required by `/admin/**` and `/seed/**` |
-| `GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |
+| `PFG_GITHUB_TOKEN` | `dummy` | GitHub token for real seeding/ingestion |
 | `GITHUB_INGESTION_ENABLED` | `false` | Enable scheduled GitHub ingestion |
 | `GITHUB_INGESTION_CRON` | `0 */6 * * *` | Ingestion cron expression |
 | `GITHUB_RECRAWL_AFTER_MS` | `21600000` | Minimum age before recrawling a repo |
@@ -446,7 +446,7 @@ Agent/runner variables:
 | `PFG_TOKEN` | Runner token returned by the hub |
 | `RUNNER_ID` | Runner id returned by the hub |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
-| `GITHUB_TOKEN` | GitHub token used by the agent |
+| `PFG_GITHUB_TOKEN` | GitHub token used by the agent |
 | `CONTRIBUTOR_NAME` | Contributor display name |
 | `MAX_TOKENS_PER_DAY` | Local daily token budget |
 

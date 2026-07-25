@@ -162,7 +162,7 @@ SNAPSHOT_KEY_TO_SETTINGS_FIELD = {
     "ANTHROPIC_API_KEY": "anthropic_api_key",
     "LLM_MODEL": "llm_model",
     "MAX_TOKENS_PER_DAY": "max_tokens_per_day",
-    "GITHUB_TOKEN": "github_token",
+    "PFG_GITHUB_TOKEN": "github_token",
     "RUNNER_ID": "runner_id",
     "CONTRIBUTOR_NAME": "contributor_name",
     "MAX_RETRIES": "max_retries",

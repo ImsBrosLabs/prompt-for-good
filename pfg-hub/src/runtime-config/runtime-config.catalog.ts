@@ -264,7 +264,7 @@ export const RUNTIME_CONFIG_CATALOG = defineCatalog([
   },
   {
     key: "githubToken",
-    env: "GITHUB_TOKEN",
+    env: "PFG_GITHUB_TOKEN",
     defaultValue: "dummy",
     schema: nonEmptyStringSchema,
     label: "GitHub token",

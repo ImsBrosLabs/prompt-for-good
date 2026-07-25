@@ -64,14 +64,14 @@ describeDb("hub e2e", () => {
   const originalAdminKey = process.env.ADMIN_KEY;
   const originalIssueMaxRetries = process.env.ISSUE_MAX_RETRIES;
   const originalIssueMinScore = process.env.ISSUE_MIN_SCORE;
-  const originalGithubToken = process.env.GITHUB_TOKEN;
+  const originalGithubToken = process.env.PFG_GITHUB_TOKEN;
   const originalGithubIngestionEnabled = process.env.GITHUB_INGESTION_ENABLED;
 
   beforeAll(async () => {
     process.env.ADMIN_KEY = adminToken;
     process.env.ISSUE_MAX_RETRIES = "3";
     process.env.ISSUE_MIN_SCORE = "60";
-    process.env.GITHUB_TOKEN = "test-github-token";
+    process.env.PFG_GITHUB_TOKEN = "test-github-token";
     delete process.env.GITHUB_INGESTION_ENABLED;
 
     const moduleRef = await Test.createTestingModule({
@@ -107,7 +107,7 @@ describeDb("hub e2e", () => {
     restoreEnv("ADMIN_KEY", originalAdminKey);
     restoreEnv("ISSUE_MAX_RETRIES", originalIssueMaxRetries);
     restoreEnv("ISSUE_MIN_SCORE", originalIssueMinScore);
-    restoreEnv("GITHUB_TOKEN", originalGithubToken);
+    restoreEnv("PFG_GITHUB_TOKEN", originalGithubToken);
     restoreEnv("GITHUB_INGESTION_ENABLED", originalGithubIngestionEnabled);
     await app?.close();
   });
@@ -472,7 +472,7 @@ describeDb("hub e2e", () => {
       hasDatabaseOverride: true,
       updatedBy: "alice",
       metadata: {
-        env: "GITHUB_TOKEN",
+        env: "PFG_GITHUB_TOKEN",
         secret: true,
         category: "GitHub API",
       },

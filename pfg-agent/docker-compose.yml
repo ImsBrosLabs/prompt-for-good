@@ -9,7 +9,7 @@ services:
       PFG_TOKEN: ${PFG_TOKEN:-test-token}
       RUNNER_ID: ${RUNNER_ID:-00000000-0000-0000-0000-000000000000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-sk-ant-test-key}
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-ghp_test_token}
+      PFG_GITHUB_TOKEN: ${PFG_GITHUB_TOKEN:-ghp_test_token}
       CONTRIBUTOR_NAME: ${CONTRIBUTOR_NAME:-anonymous}
       MAX_TOKENS_PER_DAY: ${MAX_TOKENS_PER_DAY:-100000}
     volumes:

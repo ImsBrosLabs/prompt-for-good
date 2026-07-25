@@ -39,7 +39,7 @@ export function loadConfig(configService?: EnvReader): AppConfig {
     databaseUrl:
       readEnv(configService, "DATABASE_URL") ??
       "postgresql://pfg:pfg@localhost:5432/pfg",
-    githubToken: readEnv(configService, "GITHUB_TOKEN") ?? "dummy",
+    githubToken: readEnv(configService, "PFG_GITHUB_TOKEN") ?? "dummy",
     adminKey: readEnv(configService, "ADMIN_KEY") ?? "",
     corsOrigins: (
       readEnv(configService, "CORS_ORIGINS") ??

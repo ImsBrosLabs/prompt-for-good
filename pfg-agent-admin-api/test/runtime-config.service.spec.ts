@@ -119,7 +119,7 @@ describe("RuntimeConfigService", () => {
     const { service } = createService({
       env: {
         PFG_AGENT_ADMIN_TOKEN: "admin-token",
-        GITHUB_TOKEN: "ghp_secret",
+        PFG_GITHUB_TOKEN: "ghp_secret",
         MAX_RETRIES: "7",
         LLM_MODEL: "claude-sonnet-4-6",
       },
@@ -130,7 +130,7 @@ describe("RuntimeConfigService", () => {
     const keys = items.map((item) => item.key);
 
     expect(keys).toContain("PFG_AGENT_ADMIN_TOKEN");
-    expect(keys).toContain("GITHUB_TOKEN");
+    expect(keys).toContain("PFG_GITHUB_TOKEN");
     expect(keys).toContain("MAX_RETRIES");
     expect(items.find((item) => item.key === "MAX_RETRIES")).toMatchObject({
       value: 5,
@@ -158,7 +158,7 @@ describe("RuntimeConfigService", () => {
     const { service } = createService({
       env: {
         PFG_AGENT_ADMIN_TOKEN: "admin-token",
-        GITHUB_TOKEN: "ghp_secret",
+        PFG_GITHUB_TOKEN: "ghp_secret",
         MAX_RETRIES: "7",
       },
       listRows: [override("MAX_RETRIES", 5)],
@@ -167,7 +167,7 @@ describe("RuntimeConfigService", () => {
     const snapshot = await service.runnerSnapshot();
 
     expect(snapshot).toMatchObject({
-      GITHUB_TOKEN: "ghp_secret",
+      PFG_GITHUB_TOKEN: "ghp_secret",
       MAX_RETRIES: 5,
     });
     expect(snapshot).not.toHaveProperty("PFG_AGENT_ADMIN_TOKEN");
@@ -175,20 +175,20 @@ describe("RuntimeConfigService", () => {
 
   it("persists secret database overrides without echoing secret values", async () => {
     const { service, insert } = createService({
-      env: { GITHUB_TOKEN: "env-github-token" },
+      env: { PFG_GITHUB_TOKEN: "env-github-token" },
     });
 
-    const item = await service.set("GITHUB_TOKEN", "db-github-token", "alice");
+    const item = await service.set("PFG_GITHUB_TOKEN", "db-github-token", "alice");
 
     expect(insert.values).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: "GITHUB_TOKEN",
+        key: "PFG_GITHUB_TOKEN",
         value: "db-github-token",
         updatedBy: "alice",
       }),
     );
     expect(item).toMatchObject({
-      key: "GITHUB_TOKEN",
+      key: "PFG_GITHUB_TOKEN",
       value: null,
       environmentValue: null,
       source: "database",

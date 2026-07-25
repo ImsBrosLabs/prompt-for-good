@@ -18,7 +18,7 @@ hub:
 
 contributor:
   name: "YourName"                        # your name or GitHub handle
-  github_token: ${GITHUB_TOKEN}           # GitHub PAT with repo scope
+  github_token: ${PFG_GITHUB_TOKEN}           # GitHub PAT with repo scope
 
 project_preferences:
   languages: ["python", "typescript"]     # empty list means no language constraint

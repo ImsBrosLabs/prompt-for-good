@@ -119,7 +119,7 @@ describe("RuntimeConfigService", () => {
     const { service } = createService({
       env: {
         ADMIN_KEY: "env-admin-key",
-        GITHUB_TOKEN: "env-github-token",
+        PFG_GITHUB_TOKEN: "env-github-token",
         ISSUE_MAX_RETRIES: "7",
         ISSUE_MIN_SCORE: "70",
       },
@@ -157,7 +157,7 @@ describe("RuntimeConfigService", () => {
 
   it("persists secret database overrides without echoing secret values", async () => {
     const { service, insert } = createService({
-      env: { GITHUB_TOKEN: "env-github-token" },
+      env: { PFG_GITHUB_TOKEN: "env-github-token" },
     });
 
     const item = await service.set("githubToken", "db-github-token", "alice");

@@ -168,7 +168,7 @@ The application reads from `process.env`:
 ```text
 PORT
 DATABASE_URL
-GITHUB_TOKEN
+PFG_GITHUB_TOKEN
 ADMIN_KEY
 ISSUE_MAX_RETRIES
 ISSUE_MIN_SCORE
