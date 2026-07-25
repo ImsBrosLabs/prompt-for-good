@@ -217,7 +217,25 @@ matching latency reaches 100 ms durably; then move ranking into the database.
      JWT/OIDC.
    - Add runner token rotation, revocation and hashed token storage.
 
-2. **Operations and deployment**
+2. **Human-reviewed publication lifecycle**
+   - Create a non-terminal contribution attempt when a verified patch is ready
+     and extend its lifecycle with `AWAITING_HUMAN_REVIEW`, `APPROVED` and
+     `REJECTED`. Keep the issue `CLAIMED` instead of adding review states to the
+     issue lifecycle.
+   - Bind each review request and decision to an immutable artifact digest.
+     Store requested and decided timestamps plus the authenticated hub reviewer
+     identity so the approval remains auditable after the contribution reaches
+     a terminal publication status.
+   - Require a scoped human identity to approve a contribution. Runner tokens
+     must not be authorized to approve their own work.
+   - Give review waiting a dedicated bounded lease instead of treating it as a
+     normal claim timeout. Rejection or review expiry releases the issue without
+     consuming a technical retry.
+   - Preserve the approval audit event when publication fails and allow an
+     idempotent publication retry without another review only while the artifact
+     digest remains unchanged.
+
+3. **Operations and deployment**
    - Add database readiness checks in addition to the process health endpoint.
    - Add structured logs, metrics, strict production config validation and a
      deployment path for `promptforgood.dev`.
@@ -234,26 +252,41 @@ patch retries start from a clean base revision, verification reports include
 structured planning and command diagnostics, and PR creation handles branch
 uniqueness, empty commits, fork fallback and GitHub API failures predictably.
 
-1. **Repository execution safety**
+1. **Human approval before GitHub publication**
+   - After verification, persist an immutable local review bundle containing the
+     base revision, code, documentation and test diff, verification results, and
+     planned pull-request title and description. Compute the artifact digest
+     tracked by the hub from this complete bundle.
+   - Surface the bundle in the local Runner Configuration Console and require an
+     explicit human approval action before any remote branch push or pull-request
+     creation.
+   - Bind approval to the exact artifact digest. Any bundle change invalidates
+     the approval and returns the contribution to `AWAITING_HUMAN_REVIEW`.
+   - Make branch push and pull-request creation idempotent so an approved,
+     unchanged bundle can resume safely after a runner restart.
+   - Clean up the local workspace after rejection or review expiry. Keep at most
+     one contribution awaiting review per runner in the initial implementation.
+
+2. **Repository execution safety**
    - Run project commands in a constrained runner environment with clear limits
      for time, disk, network access, and process cleanup.
    - Constrain repository command execution beyond secret-stripped environments
      with clearer limits for network access and process cleanup.
 
-2. **Agent observability**
+3. **Agent observability**
    - Emit structured phase-level timings and token usage so hub operations can
      distinguish slow repositories from agent failures.
    - Surface contribution `details` in admin views with filtering for failed
      phase, verification status and GitHub API status code.
 
-3. **Model provider support**
+4. **Model provider support**
    - Add OpenAI model support alongside the existing Anthropic path, including
      configuration for contributors who want to run the agent through a Codex
      subscription when the supported authentication and billing flow is defined.
    - Keep provider selection explicit in agent configuration so runner policy,
      token budgets and failure reporting stay comparable across model providers.
 
-4. **Agent configuration admin**
+5. **Agent configuration admin**
    - Create a local Runner Configuration Console, separate from hub
      administration, with a `pfg-agent-admin` React, Vite, React-admin and
      Material UI frontend and a dedicated `pfg-agent-admin-api` backend.
